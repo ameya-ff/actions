@@ -187,6 +187,11 @@ jobs:
           # ./gradlew assembleRelease --build-cache --parallel --no-daemon
           # cd ..
           flutter build apk --split-per-abi --target-platform android-arm64 --build-name $BUILD_NAME --no-pub
+      - name: Get signing report for release
+        run: |
+          cd android
+          ./gradlew signingReport > build/app/outputs/flutter-apk/signing_report.txt
+          cd ..
       # - name: Push to Releases
       #   uses: ncipollo/release-action@v1
       #   with:
