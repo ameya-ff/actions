@@ -40,7 +40,7 @@ jobs:
         env:
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          NOTIFY_ENDPOINT: ${{ secrets.NOTIFY_ENDPOINT }}
+          # NOTIFY_ENDPOINT: ${{ secrets.NOTIFY_ENDPOINT }}
         run: |
           if [[ "${ENV}" == "dev" ]]; then
             BUILD_NAME="v$(date +'%Y-%m-%d::%H:%M')-$ENV"
@@ -55,9 +55,9 @@ jobs:
             echo "No commit message found"
           else
             echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
-            curl --location "$NOTIFY_ENDPOINT" \
-              --header 'Content-Type: application/json' \
-              --data "{ \"message\": \"New commit: $COMMIT_MESSAGE\" }"
+            # curl --location "$NOTIFY_ENDPOINT" \
+            #   --header 'Content-Type: application/json' \
+            #   --data "{ \"message\": \"New commit: $COMMIT_MESSAGE\" }"
           fi
       # - id: 'notify_google_chat'
       #   uses: 'google-github-actions/send-google-chat-webhook@v0.0.2'
