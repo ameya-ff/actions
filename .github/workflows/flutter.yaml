@@ -124,52 +124,6 @@ jobs:
       #   run: flutter pub cache repair
       - run: flutter pub get
       - run: flutter --version
-      
-      # Cache build runner outputs
-      # - name: Cache build runner
-      #   uses: actions/cache@v2
-      #   with:
-      #     path: |
-      #       **/.dart_tool
-      #       **/*.g.dart
-      #       **/*.mocks.dart
-      #       **/*.config.dart
-      #     key: build-runner-${{ hashFiles('**/asset_graph.json', '**/*.dart', '**/pubspec.lock', '**/outputs.json') }}
-      #     restore-keys: |
-      #       build-runner-
-      
-      # Cache Gradle dependencies - Enhanced configuration
-      - name: Cache Gradle files
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.android/build-cache
-            .gradle
-            android/.gradle
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'android/app/build.gradle') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-      
-      - name: Configure Gradle properties
-        run: |
-          cat > android/gradle.properties << EOF
-          org.gradle.jvmargs=-Xmx4g -XX:MaxPermSize=512m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
-          org.gradle.parallel=true
-          org.gradle.configureondemand=true
-          org.gradle.caching=true
-          org.gradle.daemon=true
-          android.enableR8.fullMode=true
-          android.useAndroidX=true
-          android.enableJetifier=true
-          EOF
-            
-      # - name: Set Gradle environment variables
-      #   run: |
-      #     echo "GRADLE_OPTS=-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.jvmargs='-Xmx4g -XX:+HeapDumpOnOutOfMemoryError'" >> $GITHUB_ENV
-      #     echo "JAVA_OPTS=-Xmx4g" >> $GITHUB_ENV
-            
       - name: Setup Android Keystore from Secrets
         env:
           ANDROID_KEYPROPERTIES_BASE_64: ${{ secrets.ANDROID_KEYPROPERTIES_BASE_64 }}
@@ -181,12 +135,9 @@ jobs:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           ./scripts/override_assets_env.sh
-      - name: Build APK with optimized Gradle settings
+      - name: Build APK
         run: |
-          # cd android
-          # ./gradlew assembleRelease --build-cache --parallel --no-daemon
-          # cd ..
-          flutter build apk --split-per-abi --target-platform android-arm64 --build-name $BUILD_NAME --no-pub
+          flutter build apk --split-per-abi --target-platform android-arm64 --build-name $BUILD_NAME
       - name: Get signing report for release
         run: |
           cd android
