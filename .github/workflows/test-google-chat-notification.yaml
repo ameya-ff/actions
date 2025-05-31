@@ -18,14 +18,18 @@ jobs:
       
       - name: Send initial message
         id: send_message
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
         run: |
           # Store the full response
           RESPONSE=$(curl -s -X POST \
             -H "Content-Type: application/json" \
             -d '{
-              "text": "🔄 Workflow started: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}"
+              "text": "🔄 Workflow started: ${{ github.workflow }}\nEnv: $ENV\nBranch: $BRANCH_OR_TAG\nTriggered by: ${{ github.actor }}"
             }' \
-            ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }})
+            $GOOGLE_CHAT_WEBHOOK)
           
           echo "Response: $RESPONSE"
           MESSAGE_ID=$(echo "$RESPONSE" | jq -r '.name // empty')
