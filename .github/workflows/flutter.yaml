@@ -141,7 +141,7 @@ jobs:
       - name: Get signing report for release
         run: |
           cd android
-          ./gradlew signingReport > build/app/outputs/flutter-apk/signing_report.txt
+          ./gradlew signingReport > ../build/app/outputs/flutter-apk/signing_report.txt
           cd ..
       # - name: Push to Releases
       #   uses: ncipollo/release-action@v1
