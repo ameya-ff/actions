@@ -24,7 +24,7 @@ concurrency:
 jobs:
   build:
     name: Build & Release
-    runs-on: ubuntu-latest
+    runs-on: arm-ubuntu-24-image
     steps:
       - uses: actions/checkout@v3
       - shell: bash
@@ -126,17 +126,17 @@ jobs:
       - run: flutter --version
       
       # Cache build runner outputs
-      - name: Cache build runner
-        uses: actions/cache@v2
-        with:
-          path: |
-            **/.dart_tool
-            **/*.g.dart
-            **/*.mocks.dart
-            **/*.config.dart
-          key: build-runner-${{ hashFiles('**/asset_graph.json', '**/*.dart', '**/pubspec.lock', '**/outputs.json') }}
-          restore-keys: |
-            build-runner-
+      # - name: Cache build runner
+      #   uses: actions/cache@v2
+      #   with:
+      #     path: |
+      #       **/.dart_tool
+      #       **/*.g.dart
+      #       **/*.mocks.dart
+      #       **/*.config.dart
+      #     key: build-runner-${{ hashFiles('**/asset_graph.json', '**/*.dart', '**/pubspec.lock', '**/outputs.json') }}
+      #     restore-keys: |
+      #       build-runner-
       
       # Cache Gradle dependencies - Enhanced configuration
       - name: Cache Gradle files
