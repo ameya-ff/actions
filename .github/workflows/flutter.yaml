@@ -73,7 +73,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           cd packages
-          git clone -b $BRANCH --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/flutter_$PACKAGE.git" $REPO
+          git clone -b $BRANCH --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/flutter_$PACKAGE.git" $PACKAGE
           cd shared_ui
           echo "dependency_overrides:"       > pubspec_overrides.yaml
           echo "  $PACKAGE:"                   >> pubspec_overrides.yaml
@@ -101,10 +101,9 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.0'
-          channel: 'stable'
           cache: true
-          architecture: x64
+          channel: stable
+          flutter-version-file: pubspec.yaml
       - name: Clear pub cache
         run: flutter pub cache repair
       - run: flutter pub get
