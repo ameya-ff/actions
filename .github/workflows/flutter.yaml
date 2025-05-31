@@ -110,16 +110,16 @@ jobs:
       - run: flutter --version
       
       # Cache Android SDK components
-      - name: Cache Android SDK
-        uses: actions/cache@v3
-        with:
-          path: |
-            /usr/local/lib/android/sdk/platforms
-            /usr/local/lib/android/sdk/ndk
-            /usr/local/lib/android/sdk/cmake
-          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/build.gradle.kts') }}
-          restore-keys: |
-            ${{ runner.os }}-android-sdk-
+      # - name: Cache Android SDK
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: |
+      #       /usr/local/lib/android/sdk/platforms
+      #       /usr/local/lib/android/sdk/ndk
+      #       /usr/local/lib/android/sdk/cmake
+      #     key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/build.gradle.kts') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-android-sdk-
 
       # Cache Gradle dependencies
       - name: Cache Gradle dependencies
