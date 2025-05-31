@@ -25,7 +25,7 @@ jobs:
             -d '{
               "text": "🔄 Workflow started: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}"
             }' \
-            ${{ secrets.GOOGLE_CHAT_WEBHOOK }})
+            ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }})
           
           echo "Response: $RESPONSE"
           MESSAGE_ID=$(echo "$RESPONSE" | jq -r '.name // empty')
