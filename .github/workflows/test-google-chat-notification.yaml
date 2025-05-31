@@ -1,0 +1,61 @@
+# GitHub action that sends a message to Google Chat
+# When action is triggered, it sends a message to Google Chat with the status of the action
+# When the action is successful, it updates the message with the status of the action
+# When the action fails, it updates the message with the status of the action and the error message
+
+name: Test - Google Chat Notification
+
+on:
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Send initial message
+        id: send_message
+        run: |
+          MESSAGE_ID=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d '{
+              "text": "🔄 Workflow started: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}"
+            }' \
+            ${{ secrets.GOOGLE_CHAT_WEBHOOK }} | jq -r '.name')
+          echo "message_id=$MESSAGE_ID" >> $GITHUB_OUTPUT
+      
+      - name: Run tests
+        id: tests
+        run: |
+          # Replace with your actual test command
+          echo "Running tests..."
+          # Add artificial delay to simulate long-running tests (60 seconds)
+          echo "Simulating long-running tests..."
+          sleep 60
+          echo "Tests completed!"
+          # Simulate success or failure (in a real scenario, this would be your actual tests)
+          exit 0
+      
+      - name: Update message on success
+        if: success()
+        run: |
+          curl -X PUT \
+            -H "Content-Type: application/json" \
+            -d '{
+              "text": "✅ Workflow succeeded: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}"
+            }' \
+            "${{ secrets.GOOGLE_CHAT_WEBHOOK }}/messages/${{ steps.send_message.outputs.message_id }}"
+      
+      - name: Update message on failure
+        if: failure()
+        run: |
+          curl -X PUT \
+            -H "Content-Type: application/json" \
+            -d '{
+              "text": "❌ Workflow failed: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}\nError: Job failed with status ${{ job.status }}"
+            }' \
+            "${{ secrets.GOOGLE_CHAT_WEBHOOK }}/messages/${{ steps.send_message.outputs.message_id }}"
+
