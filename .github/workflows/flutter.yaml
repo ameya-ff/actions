@@ -165,10 +165,10 @@ jobs:
           android.enableJetifier=true
           EOF
             
-      - name: Set Gradle environment variables
-        run: |
-          echo "GRADLE_OPTS=-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.jvmargs='-Xmx4g -XX:+HeapDumpOnOutOfMemoryError'" >> $GITHUB_ENV
-          echo "JAVA_OPTS=-Xmx4g" >> $GITHUB_ENV
+      # - name: Set Gradle environment variables
+      #   run: |
+      #     echo "GRADLE_OPTS=-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.jvmargs='-Xmx4g -XX:+HeapDumpOnOutOfMemoryError'" >> $GITHUB_ENV
+      #     echo "JAVA_OPTS=-Xmx4g" >> $GITHUB_ENV
             
       - name: Setup Android Keystore from Secrets
         env:
