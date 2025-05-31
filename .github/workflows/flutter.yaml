@@ -36,34 +36,34 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
-      # - shell: bash
-      #   env:
-      #     BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-      #     ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-      #     NOTIFY_ENDPOINT: ${{ secrets.NOTIFY_ENDPOINT }}
-      #   run: |
-      #     if [[ "${ENV}" == "dev" ]]; then
-      #       BUILD_NAME="v$(date +'%Y-%m-%d::%H:%M')-$ENV"
-      #       echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
-      #     else
-      #       BUILD_NAME="$BRANCH_OR_TAG"
-      #       echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
-      #     fi
-      #     cd tmp
-      #     COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
-      #     if [[ -z "$COMMIT_MESSAGE" ]]; then
-      #       echo "No commit message found"
-      #     else
-      #       echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
-      #       curl --location "$NOTIFY_ENDPOINT" \
-      #         --header 'Content-Type: application/json' \
-      #         --data "{ \"message\": \"New commit: $COMMIT_MESSAGE\" }"
-      #     fi
-      - id: 'notify_google_chat'
-        uses: 'google-github-actions/send-google-chat-webhook@v0.0.2'
-        with:
-          webhook_url: '${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}'
-          mention: "<users/all> running Flutter build"
+      - shell: bash
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          NOTIFY_ENDPOINT: ${{ secrets.NOTIFY_ENDPOINT }}
+        run: |
+          if [[ "${ENV}" == "dev" ]]; then
+            BUILD_NAME="v$(date +'%Y-%m-%d::%H:%M')-$ENV"
+            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+          else
+            BUILD_NAME="$BRANCH_OR_TAG"
+            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+          fi
+          cd tmp
+          COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
+          if [[ -z "$COMMIT_MESSAGE" ]]; then
+            echo "No commit message found"
+          else
+            echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
+            curl --location "$NOTIFY_ENDPOINT" \
+              --header 'Content-Type: application/json' \
+              --data "{ \"message\": \"New commit: $COMMIT_MESSAGE\" }"
+          fi
+      # - id: 'notify_google_chat'
+      #   uses: 'google-github-actions/send-google-chat-webhook@v0.0.2'
+      #   with:
+      #     webhook_url: '${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}'
+      #     mention: "<users/all> running Flutter build"
       - run: rsync -a --remove-source-files tmp/ .
       - shell: bash
         env:
@@ -104,8 +104,8 @@ jobs:
           cache: true
           channel: stable
           flutter-version-file: pubspec.yaml
-      - name: Clear pub cache
-        run: flutter pub cache repair
+      # - name: Clear pub cache
+      #   run: flutter pub cache repair
       - run: flutter pub get
       - run: flutter --version
       - name: Setup Android Keystore from Secrets
