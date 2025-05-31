@@ -24,7 +24,7 @@ concurrency:
 jobs:
   build:
     name: Build & Release
-    runs-on: arm-ubuntu-24-image
+    runs-on: ubuntu-24.04-arm #https://github.com/actions/partner-runner-images/blob/main/images/arm-ubuntu-24-image.md
     steps:
       - uses: actions/checkout@v3
       - shell: bash
