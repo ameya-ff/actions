@@ -3,7 +3,7 @@
 # When the action is successful, it updates the message with the status of the action
 # When the action fails, it updates the message with the status of the action and the error message
 
-name: Test - Google Chat Notification
+name: Google Chat Notification
 
 on:
   workflow_dispatch:
@@ -19,43 +19,58 @@ jobs:
       - name: Send initial message
         id: send_message
         run: |
-          MESSAGE_ID=$(curl -s -X POST \
+          # Store the full response
+          RESPONSE=$(curl -s -X POST \
             -H "Content-Type: application/json" \
             -d '{
               "text": "🔄 Workflow started: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}"
             }' \
-            ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }} | jq -r '.name')
-          echo "message_id=$MESSAGE_ID" >> $GITHUB_OUTPUT
+            ${{ secrets.GOOGLE_CHAT_WEBHOOK }})
+          
+          echo "Response: $RESPONSE"
+          MESSAGE_ID=$(echo "$RESPONSE" | jq -r '.name // empty')
+          echo "Extracted message ID: $MESSAGE_ID"
+          
+          if [ -n "$MESSAGE_ID" ]; then
+            echo "message_id=$MESSAGE_ID" >> $GITHUB_OUTPUT
+            
+            # Parse webhook URL to prepare for updates
+            WEBHOOK_URL="${{ secrets.GOOGLE_CHAT_WEBHOOK }}"
+            BASE_URL=$(echo "$WEBHOOK_URL" | cut -d'?' -f1)
+            QUERY_PARAMS=$(echo "$WEBHOOK_URL" | grep -o '?.*$')
+            echo "update_url=${BASE_URL}/${MESSAGE_ID}${QUERY_PARAMS}" >> $GITHUB_OUTPUT
+          else
+            echo "Failed to extract message ID"
+          fi
       
       - name: Run tests
         id: tests
+        if: steps.send_message.outputs.message_id != ''
         run: |
           # Replace with your actual test command
           echo "Running tests..."
-          # Add artificial delay to simulate long-running tests (60 seconds)
+          # Add artificial delay to simulate long-running tests
           echo "Simulating long-running tests..."
-          sleep 60
+          sleep 30
           echo "Tests completed!"
-          # Simulate success or failure (in a real scenario, this would be your actual tests)
           exit 0
       
       - name: Update message on success
-        if: success()
+        if: success() && steps.send_message.outputs.message_id != ''
         run: |
-          curl -X PUT \
+          curl -s -X PUT \
             -H "Content-Type: application/json" \
             -d '{
               "text": "✅ Workflow succeeded: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}"
             }' \
-            "${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}/messages/${{ steps.send_message.outputs.message_id }}"
+            "${{ steps.send_message.outputs.update_url }}"
       
       - name: Update message on failure
-        if: failure()
+        if: failure() && steps.send_message.outputs.message_id != ''
         run: |
-          curl -X PUT \
+          curl -s -X PUT \
             -H "Content-Type: application/json" \
             -d '{
               "text": "❌ Workflow failed: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}\nError: Job failed with status ${{ job.status }}"
             }' \
-            "${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}/messages/${{ steps.send_message.outputs.message_id }}"
-
+            "${{ steps.send_message.outputs.update_url }}"
