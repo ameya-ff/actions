@@ -24,7 +24,7 @@ jobs:
             -d '{
               "text": "🔄 Workflow started: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}"
             }' \
-            ${{ secrets.GOOGLE_CHAT_WEBHOOK }} | jq -r '.name')
+            ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }} | jq -r '.name')
           echo "message_id=$MESSAGE_ID" >> $GITHUB_OUTPUT
       
       - name: Run tests
@@ -47,7 +47,7 @@ jobs:
             -d '{
               "text": "✅ Workflow succeeded: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}"
             }' \
-            "${{ secrets.GOOGLE_CHAT_WEBHOOK }}/messages/${{ steps.send_message.outputs.message_id }}"
+            "${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}/messages/${{ steps.send_message.outputs.message_id }}"
       
       - name: Update message on failure
         if: failure()
@@ -57,5 +57,5 @@ jobs:
             -d '{
               "text": "❌ Workflow failed: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}\nError: Job failed with status ${{ job.status }}"
             }' \
-            "${{ secrets.GOOGLE_CHAT_WEBHOOK }}/messages/${{ steps.send_message.outputs.message_id }}"
+            "${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}/messages/${{ steps.send_message.outputs.message_id }}"
 
