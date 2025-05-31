@@ -99,6 +99,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-flutter-  # Matches any previous cache key
 
+      - name: Cache Flutter pub dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-cache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-cache-
+
+      - name: Cache Dart tool
+        uses: actions/cache@v3
+        with:
+          path: .dart_tool
+          key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-dart-tool-
+
       - uses: subosito/flutter-action@v2
         with:
           cache: true
@@ -109,29 +125,37 @@ jobs:
       - run: flutter pub get
       - run: flutter --version
       
-      # Cache Android SDK components
-      # - name: Cache Android SDK
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: |
-      #       /usr/local/lib/android/sdk/platforms
-      #       /usr/local/lib/android/sdk/ndk
-      #       /usr/local/lib/android/sdk/cmake
-      #     key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/build.gradle.kts') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-android-sdk-
-
-      # Cache Gradle dependencies
-      - name: Cache Gradle dependencies
+      # Cache Gradle dependencies - Enhanced configuration
+      - name: Cache Gradle files
         uses: actions/cache@v3
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.android/build-cache
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+            .gradle
+            android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'android/app/build.gradle') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
+      
+      - name: Configure Gradle properties
+        run: |
+          cat > android/gradle.properties << EOF
+          org.gradle.jvmargs=-Xmx4g -XX:MaxPermSize=512m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
+          org.gradle.parallel=true
+          org.gradle.configureondemand=true
+          org.gradle.caching=true
+          org.gradle.daemon=true
+          android.enableR8.fullMode=true
+          android.useAndroidX=true
+          android.enableJetifier=true
+          EOF
+            
+      - name: Set Gradle environment variables
+        run: |
+          echo "GRADLE_OPTS=-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.jvmargs='-Xmx4g -XX:+HeapDumpOnOutOfMemoryError'" >> $GITHUB_ENV
+          echo "JAVA_OPTS=-Xmx4g" >> $GITHUB_ENV
             
       - name: Setup Android Keystore from Secrets
         env:
@@ -144,7 +168,12 @@ jobs:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           ./scripts/override_assets_env.sh
-      - run: flutter build apk --split-per-abi --target-platform android-arm64 --build-name $BUILD_NAME --no-pub
+      - name: Build APK with optimized Gradle settings
+        run: |
+          cd android
+          ./gradlew assembleRelease --build-cache --parallel --no-daemon
+          cd ..
+          flutter build apk --split-per-abi --target-platform android-arm64 --build-name $BUILD_NAME --no-pub
       # - name: Push to Releases
       #   uses: ncipollo/release-action@v1
       #   with:
