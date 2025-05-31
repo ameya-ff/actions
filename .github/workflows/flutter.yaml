@@ -170,9 +170,9 @@ jobs:
           ./scripts/override_assets_env.sh
       - name: Build APK with optimized Gradle settings
         run: |
-          cd android
-          ./gradlew assembleRelease --build-cache --parallel --no-daemon
-          cd ..
+          # cd android
+          # ./gradlew assembleRelease --build-cache --parallel --no-daemon
+          # cd ..
           flutter build apk --split-per-abi --target-platform android-arm64 --build-name $BUILD_NAME --no-pub
       # - name: Push to Releases
       #   uses: ncipollo/release-action@v1
