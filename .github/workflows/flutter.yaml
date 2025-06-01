@@ -16,14 +16,25 @@ on:
         description: git ref
         required: true
         default: main
+      platform:
+        description: 'Build platform'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - android
+        - web
+
 # If another release happens while this workflow is still running,
 # cancel the earlier run in favor of the next run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
   cancel-in-progress: true
+
 jobs:
   build:
-    name: Build & Release
+    name: Build Flutter App
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -36,18 +47,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
-      - shell: bash
+      
+      - id: set_build_name
+        shell: bash
         env:
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          # NOTIFY_ENDPOINT: ${{ secrets.NOTIFY_ENDPOINT }}
         run: |
           if [[ "${ENV}" == "dev" ]]; then
             BUILD_NAME="v$(date +'%Y-%m-%d::%H:%M')-$ENV"
             echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+            echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
           else
             BUILD_NAME="$BRANCH_OR_TAG"
             echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+            echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
           fi
           cd tmp
           COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
@@ -55,16 +69,10 @@ jobs:
             echo "No commit message found"
           else
             echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
-            # curl --location "$NOTIFY_ENDPOINT" \
-            #   --header 'Content-Type: application/json' \
-            #   --data "{ \"message\": \"New commit: $COMMIT_MESSAGE\" }"
           fi
-      # - id: 'notify_google_chat'
-      #   uses: 'google-github-actions/send-google-chat-webhook@v0.0.2'
-      #   with:
-      #     webhook_url: '${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}'
-      #     mention: "<users/all> running Flutter build"
+      
       - run: rsync -a --remove-source-files tmp/ .
+      
       - shell: bash
         env:
           BRANCH: ${{ secrets.OVERRIDE_BRANCH_NAME }}
@@ -83,12 +91,19 @@ jobs:
           echo "dependency_overrides:"       > pubspec_overrides.yaml
           echo "  $PACKAGE:"                   >> pubspec_overrides.yaml
           echo "    path: packages/$PACKAGE"   >> pubspec_overrides.yaml
-      # - name: Update version in YAML
-      #   run: sed -i 's/path: ../path: packages/g' pubspec.yaml
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          cache: true
+          channel: stable
+          flutter-version-file: pubspec.yaml
+      
       - uses: actions/setup-java@v3
         with:
           distribution: 'adopt'
           java-version: '17'
+      
       - uses: actions/cache@v3
         with:
           path: |
@@ -97,8 +112,8 @@ jobs:
             **/flutter/packages
           key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-  # Matches any previous cache key
-
+            ${{ runner.os }}-flutter-
+      
       - name: Cache Flutter pub dependencies
         uses: actions/cache@v3
         with:
@@ -106,7 +121,7 @@ jobs:
           key: ${{ runner.os }}-pub-cache-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pub-cache-
-
+      
       - name: Cache Dart tool
         uses: actions/cache@v3
         with:
@@ -114,68 +129,68 @@ jobs:
           key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-dart-tool-
-
-      - uses: subosito/flutter-action@v2
-        with:
-          cache: true
-          channel: stable
-          flutter-version-file: pubspec.yaml
-      # - name: Clear pub cache
-      #   run: flutter pub cache repair
+      
       - run: flutter pub get
       - run: flutter --version
-      - name: Setup Android Keystore from Secrets
-        env:
-          ANDROID_KEYPROPERTIES_BASE_64: ${{ secrets.ANDROID_KEYPROPERTIES_BASE_64 }}
-          ANDROID_KEYSTORE_BASE_64: ${{ secrets.ANDROID_KEYSTORE_BASE_64 }}
-        run: |
-          ./scripts/android_setup.sh
+      
       - name: Setup assets env
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           ./scripts/override_assets_env.sh
-      - name: Build APK
+
+      # Android build steps
+      - name: Setup Android Keystore from Secrets
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
+        env:
+          ANDROID_KEYPROPERTIES_BASE_64: ${{ secrets.ANDROID_KEYPROPERTIES_BASE_64 }}
+          ANDROID_KEYSTORE_BASE_64: ${{ secrets.ANDROID_KEYSTORE_BASE_64 }}
         run: |
-          flutter build apk --split-per-abi --target-platform android-arm64 --build-name $BUILD_NAME
+          ./scripts/android_setup.sh
+      
+      - name: Build APK
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
+        run: |
+          flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }}
+      
       - name: Get signing report for release
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
         run: |
           cd android
           ./gradlew signingReport > ../build/app/outputs/flutter-apk/signing_report.txt
           cd ..
-      # - name: Push to Releases
-      #   uses: ncipollo/release-action@v1
-      #   with:
-      #     allowUpdates: true
-      #     artifacts: "build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
-      #     owner: ${{ secrets.OWNER }}
-      #     repo: ${{ secrets.REPO_F }}
-      #     # tag: v1.0.${{ github.run_number }}
-      #     token: ${{ secrets.TOKEN }}
-      #     # tag: v1.0.0
-      #     tag: ${{ github.event.client_payload.env || github.event.inputs.env }}
       
-      # - shell: bash
-      #   env:
-      #     NOTIFY_ENDPOINT: ${{ secrets.NOTIFY_ENDPOINT }}
-      #   run: |
-      #     curl --location "$NOTIFY_ENDPOINT" \
-      #       --header 'Content-Type: application/json' \
-      #       --data "{ \"message\": \"Release ($BUILD_NAME) is ready for download\" }"
-      - uses: ryand56/r2-upload-action@latest # attempt 2
+      - uses: ryand56/r2-upload-action@latest
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
         with:
           r2-account-id: ${{ secrets.CF_ACCOUNT_ID }}
           r2-access-key-id: ${{ secrets.CF_R2_ACCESS_KEY }}
           r2-secret-access-key: ${{ secrets.CF_R2_SECRET_KEY }}
           r2-bucket: ${{ secrets.CF_R2_BUCKET }}
           source-dir: build/app/outputs/flutter-apk
-          destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }} # Can be anything as long as it is an actual path
-          output-file-url: false # defaults to true
-          multipart-size: 100 # If the file size is greater than the value provided here, then use multipart upload
-          max-retries: 5 # The maximum number of retries it takes to upload a multipart chunk until it moves on to the next part
-          multipart-concurrent: true # Whether to concurrently upload a multipart chunk
-          keep-file-fresh: true # defaults to false
-      # - name: SonarQube Scan
-      #   uses: SonarSource/sonarqube-scan-action@v5
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
+          output-file-url: false
+          multipart-size: 100
+          max-retries: 5
+          multipart-concurrent: true
+          keep-file-fresh: true
+
+      # Web build steps
+      - name: Build Web
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
+        run: flutter build web --release
+      
+      - name: Deploy to Netlify
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
+        uses: nwtgck/actions-netlify@v3.0
+        with:
+          publish-dir: './build/web'
+          production-branch: main
+          deploy-message: "Deploy from GitHub Actions"
+          enable-pull-request-comment: false
+          enable-commit-comment: false
+          overwrites-pull-request-comment: false
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && secrets.NETLIFY_SITE_ID_PROD || secrets.NETLIFY_SITE_ID_DEV }}
+        timeout-minutes: 1
