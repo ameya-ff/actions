@@ -182,7 +182,7 @@ jobs:
       
       - name: Deploy to Netlify
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
-        uses: ameya-ff/actions-netlify@ameya
+        uses: ameya-ff/actions-netlify@341bf45991c05f3d65b56b9ef54839a0cdada4fa
         with:
           publish-dir: './build/web'
           production-branch: main
