@@ -65,6 +65,12 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v3
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v1
+        with:
+          token_format: access_token
+          credentials_json: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
