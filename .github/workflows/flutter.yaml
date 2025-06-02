@@ -182,14 +182,18 @@ jobs:
       
       - name: Deploy to Netlify
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
-        uses: nwtgck/actions-netlify@v3.0
+        uses: ameya-ff/actions-netlify@ameya
         with:
           publish-dir: './build/web'
           production-branch: main
           deploy-message: "Deploy from GitHub Actions"
           enable-pull-request-comment: false
-          enable-commit-comment: false
+          enable-commit-comment: true
+          enable-commit-status: true
           overwrites-pull-request-comment: false
+          owner: ${{ secrets.OWNER }}
+          repo: ${{ secrets.REPO_F }}
+          sha: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && secrets.NETLIFY_SITE_ID_PROD || secrets.NETLIFY_SITE_ID_DEV }}
