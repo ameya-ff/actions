@@ -60,3 +60,27 @@ jobs:
           push: true
           tags: "${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/pocketbase-${{ github.event.client_payload.env || github.event.inputs.env }}:latest"
 
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+      - name: Configure gcloud
+        shell: bash
+        env:
+          GCP_GKE_CLUSTER_NAME: ${{ secrets.GCP_GKE_CLUSTER_NAME }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+        run: |
+          gcloud components install gke-gcloud-auth-plugin
+          gcloud container clusters get-credentials $GCP_GKE_CLUSTER_NAME --region $GCP_REGION
+      - name: Deploy to GKE
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          OWNER: ${{ secrets.OWNER }}
+          TOKEN: ${{ secrets.GH_TOKEN }}
+          WORKFLOW: ${{ github.workflow }}
+        run: |
+          git clone -b main --single-branch "https://farflungai:$TOKEN@github.com/$OWNER/infra.git" infra
+          kubectl apply -k infra/gke/k8s/$WORKFLOW/$ENV/
+          
+          DEPLOYMENT=$(kubectl get deployments -n farflung -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${WORKFLOW}" | grep "${ENV}" | head -n1)
+          kubectl patch deployment $DEPLOYMENT -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"`date +'%s'`\"}}}}}"
