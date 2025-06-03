@@ -1,0 +1,109 @@
+name: backend
+on:
+  repository_dispatch:
+    types: [trigger-backend-deploy]
+  workflow_dispatch:
+    inputs:
+      env:
+        description: target env
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - prod
+      git-ref:
+        description: git ref
+        required: true
+        default: main
+# If another release happens while this workflow is still running,
+# cancel the earlier run in favor of the next run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
+  cancel-in-progress: true
+jobs:
+  build:
+    name: Build & Push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - shell: bash
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          OWNER: ${{ secrets.OWNER }}
+          REPO: ${{ secrets.REPO_B }}
+          TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/$REPO.git" tmp
+          mv tmp/* .
+      - shell: bash
+        run: |
+          cd tmp
+          COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
+          BUILD_NAME="v$(date +'%Y-%m-%d::%H:%M:%S')"
+          if [[ -z "$COMMIT_MESSAGE" ]]; then
+            echo "No commit message found"
+          else
+            echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
+            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+          fi 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v1
+        with:
+          token_format: access_token
+          credentials_json: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
+      - name: Login to GAR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.GCP_GAR_DOCKER_REGISTRY }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ secrets.REPO_B_DOCKER_1 }}/
+          platforms: linux/amd64
+          push: true
+          tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/${{ secrets.REPO_B }}-${{ secrets.REPO_B_DOCKER_1 }}-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
+
+  deploy:
+    name: Deploy to GKE
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v3
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v1
+        with:
+          token_format: access_token
+          credentials_json: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+      - name: Configure gcloud
+        shell: bash
+        env:
+          GCP_GKE_CLUSTER_NAME: ${{ secrets.GCP_GKE_CLUSTER_NAME }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+        run: |
+          gcloud components install gke-gcloud-auth-plugin
+          gcloud container clusters get-credentials $GCP_GKE_CLUSTER_NAME --region $GCP_REGION
+      - name: Deploy and Patch
+        shell: bash
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          NAMESPACE: ${{ secrets.GCP_GKE_NAMESPACE_F }}
+          OWNER: ${{ secrets.OWNER }}
+          TOKEN: ${{ secrets.GH_TOKEN }}
+          WORKFLOW: ${{ github.workflow }}
+        run: |
+          git clone -b main --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/infra.git" infra
+          kubectl apply -k infra/gke/k8s/$WORKFLOW/$ENV/
+          DEPLOYMENT=$(kubectl get deployments -n $NAMESPACE -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${WORKFLOW}" | grep "${ENV}" | head -n1)
+          kubectl patch deployment $DEPLOYMENT -n $NAMESPACE -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\"}}}}}"
