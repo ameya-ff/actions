@@ -1,4 +1,4 @@
-name: Flutter
+name: flutter-stage
 on:
   repository_dispatch:
     types: [trigger-flutter-stage-workflow]
