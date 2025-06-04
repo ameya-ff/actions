@@ -1,0 +1,106 @@
+name: Flutter
+on:
+  repository_dispatch:
+    types: [trigger-flutter-stage-workflow]
+  workflow_dispatch:
+    inputs:
+      git-ref:
+        description: git ref
+        required: true
+        default: main
+
+# If another release happens while this workflow is still running,
+# cancel the earlier run in favor of the next run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Flutter Stage App
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - shell: bash
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          OWNER: ${{ secrets.OWNER }}
+          REPO: ${{ secrets.REPO_F }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
+          rsync -a --remove-source-files tmp/ .
+      - shell: bash
+        env:
+          BRANCH: ${{ secrets.OVERRIDE_BRANCH_NAME }}
+          OWNER: ${{ secrets.OWNER }}
+          PACKAGE: ${{ secrets.OVERRIDE_FLUTTER_PACKAGE_CH }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          cd packages
+          git clone -b $BRANCH --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/flutter_$PACKAGE.git" $PACKAGE
+          cd shared_ui
+          echo "dependency_overrides:"       > pubspec_overrides.yaml
+          echo "  $PACKAGE:"                   >> pubspec_overrides.yaml
+          echo "    path: ../$PACKAGE"         >> pubspec_overrides.yaml
+          cd ..
+          cd ..
+          echo "dependency_overrides:"       > pubspec_overrides.yaml
+          echo "  $PACKAGE:"                   >> pubspec_overrides.yaml
+          echo "    path: packages/$PACKAGE"   >> pubspec_overrides.yaml
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          cache: true
+          channel: stable
+          flutter-version-file: pubspec.yaml
+      - uses: actions/cache@v3
+        with:
+          path: |
+            **/flutter/.pub
+            **/flutter/bin
+            **/flutter/packages
+          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+      
+      - name: Cache Flutter pub dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-cache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-cache-
+      
+      - name: Cache Dart tool
+        uses: actions/cache@v3
+        with:
+          path: .dart_tool
+          key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-dart-tool-
+      
+      - run: flutter pub get
+      # Web build steps
+      - name: Build Web
+        run: flutter build web --release
+      
+      - name: Deploy to Netlify
+        uses: ameya-ff/actions-netlify@ameya
+        with:
+          publish-dir: './build/web'
+          production-branch: main
+          deploy-message: "Deploy from GitHub Actions"
+          enable-pull-request-comment: false
+          enable-commit-comment: false
+          enable-commit-status: false
+          overwrites-pull-request-comment: false
+          owner: ${{ secrets.OWNER }}
+          repo: ${{ secrets.REPO_F }}
+          sha: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_AMEYA_CODEX }}
+        timeout-minutes: 1
