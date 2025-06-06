@@ -91,7 +91,8 @@ jobs:
         uses: ameya-ff/actions-netlify@ameya
         with:
           publish-dir: './build/web'
-          production-branch: main
+          production-branch: foo
+          production-deploy: false
           deploy-message: "Deploy from GitHub Actions"
           enable-pull-request-comment: false
           enable-commit-comment: false
@@ -100,6 +101,7 @@ jobs:
           owner: ${{ secrets.OWNER }}
           repo: ${{ secrets.REPO_F }}
           sha: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          alias: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_AMEYA_CODEX }}
