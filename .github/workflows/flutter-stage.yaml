@@ -8,10 +8,9 @@ on:
         description: git ref
         required: true
         default: main
-      alias:
-        description: alias for the branch
-        required: false
-        default: main
+      pull-request-number:
+        description: pull request number
+        required: true
 
 # If another release happens while this workflow is still running,
 # cancel the earlier run in favor of the next run.
@@ -105,8 +104,10 @@ jobs:
           owner: ${{ secrets.OWNER }}
           repo: ${{ secrets.REPO_F }}
           sha: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          alias: ${{ github.event.client_payload.alias || github.event.inputs.alias }}
           github-token: ${{ secrets.GH_TOKEN }}
+          enable-github-deployment: false
+          pull-request-number: ${{ github.event.client_payload.pull-request-number || github.event.inputs.pull-request-number }}
+          alias: ${{ github.event.client_payload.pull-request-number || github.event.inputs.pull-request-number }}
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_AMEYA_CODEX }}
