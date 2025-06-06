@@ -8,6 +8,10 @@ on:
         description: git ref
         required: true
         default: main
+      alias:
+        description: alias for the branch
+        required: false
+        default: main
 
 # If another release happens while this workflow is still running,
 # cancel the earlier run in favor of the next run.
@@ -101,7 +105,7 @@ jobs:
           owner: ${{ secrets.OWNER }}
           repo: ${{ secrets.REPO_F }}
           sha: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          alias: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          alias: ${{ github.event.client_payload.alias || github.event.inputs.alias }}
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_AMEYA_CODEX }}
