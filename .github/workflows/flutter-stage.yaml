@@ -100,7 +100,7 @@ jobs:
           enable-pull-request-comment: true
           enable-commit-comment: true
           enable-commit-status: false
-          overwrites-pull-request-comment: true
+          overwrites-pull-request-comment: false
           owner: ${{ secrets.OWNER }}
           repo: ${{ secrets.REPO_F }}
           sha: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
