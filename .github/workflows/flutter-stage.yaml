@@ -97,7 +97,7 @@ jobs:
           publish-dir: './build/web'
           production-branch: foo
           production-deploy: false
-          deploy-message: "Deploy from GitHub Actions"
+          deploy-message: "Branch: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}"
           enable-pull-request-comment: true
           enable-commit-comment: true
           enable-commit-status: false
