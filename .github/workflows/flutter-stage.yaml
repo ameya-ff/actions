@@ -15,7 +15,7 @@ on:
 # If another release happens while this workflow is still running,
 # cancel the earlier run in favor of the next run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
+  group: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}-${{ github.event.client_payload.pull-request-number || github.event.inputs.pull-request-number }}
   cancel-in-progress: true
 
 jobs:
