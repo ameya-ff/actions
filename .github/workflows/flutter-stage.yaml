@@ -34,25 +34,7 @@ jobs:
         run: |
           git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
           rsync -a --remove-source-files tmp/ .
-      - shell: bash
-        env:
-          BRANCH: ${{ secrets.OVERRIDE_BRANCH_NAME }}
-          OWNER: ${{ secrets.OWNER }}
-          PACKAGE: ${{ secrets.OVERRIDE_FLUTTER_PACKAGE_CH }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          cd packages
-          git clone -b $BRANCH --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/flutter_$PACKAGE.git" $PACKAGE
-          cd shared_ui
-          echo "dependency_overrides:"       > pubspec_overrides.yaml
-          echo "  $PACKAGE:"                   >> pubspec_overrides.yaml
-          echo "    path: ../$PACKAGE"         >> pubspec_overrides.yaml
-          cd ..
-          cd ..
-          echo "dependency_overrides:"       > pubspec_overrides.yaml
-          echo "  $PACKAGE:"                   >> pubspec_overrides.yaml
-          echo "    path: packages/$PACKAGE"   >> pubspec_overrides.yaml
-      
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
