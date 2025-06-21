@@ -31,8 +31,8 @@ jobs:
         env:
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          OWNER: ${{ secrets.OWNER_AD }}
-          REPO: ${{ secrets.REPO_AD_LP }}
+          OWNER: ${{ secrets.OWNER }}
+          REPO: ${{ github.workflow }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
@@ -43,12 +43,6 @@ jobs:
           node-version: '20.x'
       # Web build steps
       - name: Build Web
-        env:
-          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          OWNER: ${{ secrets.OWNER_AD }}
-          REPO: ${{ secrets.REPO_AD_LP }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           npm install
           npm run build
@@ -63,8 +57,8 @@ jobs:
           enable-commit-comment: false
           enable-commit-status: false
           overwrites-pull-request-comment: false
-          owner: ${{ secrets.OWNER_AD }}
-          repo: ${{ secrets.REPO_AD_LP }}
+          owner: ${{ secrets.OWNER }}
+          repo: ${{ github.workflow }}
           sha: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
           github-token: ${{ secrets.GH_TOKEN }}
           enable-github-deployment: false
