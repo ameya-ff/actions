@@ -1,4 +1,4 @@
-name: Landing Page
+name: landing-page
 on:
   workflow_dispatch:
     inputs:
