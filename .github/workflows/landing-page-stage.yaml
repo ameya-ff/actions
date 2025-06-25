@@ -1,0 +1,66 @@
+name: landing-page-stage
+on:
+  repository_dispatch:
+    types: [landing-page-stage-workflow]
+  workflow_dispatch:
+    inputs:
+      git-ref:
+        description: git ref
+        required: true
+        default: main
+      pull-request-number:
+        description: pull request number
+        required: true
+
+# If another release happens while this workflow is still running,
+# cancel the earlier run in favor of the next run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - shell: bash
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          OWNER: ${{ secrets.OWNER }}
+          REPO: ${{ github.workflow }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
+          rsync -a --remove-source-files tmp/ .
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - name: Build Web
+        run: |
+          npm install
+          npm run build
+      - name: Deploy to Netlify
+        uses: ameya-ff/actions-netlify@ameya
+        with:
+          publish-dir: './dist'
+          production-branch: foo
+          production-deploy: false
+          deploy-message: "Branch: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}"
+          enable-pull-request-comment: true
+          enable-commit-comment: true
+          enable-commit-status: false
+          overwrites-pull-request-comment: false
+          owner: ${{ secrets.OWNER }}
+          repo: landing-page
+          sha: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          github-token: ${{ secrets.GH_TOKEN }}
+          enable-github-deployment: false
+          pull-request-number: ${{ github.event.client_payload.pull-request-number || github.event.inputs.pull-request-number }}
+          alias: ${{ github.event.client_payload.pull-request-number || github.event.inputs.pull-request-number }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_LANDING_PAGE }}
+        timeout-minutes: 1
