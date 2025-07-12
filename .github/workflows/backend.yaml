@@ -1,7 +1,7 @@
 name: backend
 on:
   repository_dispatch:
-    types: [trigger-backend-deploy]
+    types: [trigger-backend-workflow]
   workflow_dispatch:
     inputs:
       env:
@@ -11,11 +11,13 @@ on:
         type: choice
         options:
         - dev
+        - dev-codex
         - prod
       git-ref:
         description: git ref
         required: true
         default: main
+
 # If another release happens while this workflow is still running,
 # cancel the earlier run in favor of the next run.
 concurrency:
@@ -64,9 +66,6 @@ jobs:
           password: ${{ steps.auth.outputs.access_token }}
       - name: Build and push
         uses: docker/build-push-action@v6
-        env:
-          DOCKER_BUILD_RECORD_UPLOAD: false
-          DOCKER_BUILD_SUMMARY: false
         with:
           context: ${{ secrets.REPO_B_DOCKER_1 }}/
           platforms: linux/amd64
