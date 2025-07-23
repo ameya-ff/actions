@@ -162,6 +162,13 @@ jobs:
         run: |
           flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --dart-define=BUILD_TYPE=$ENV
       
+      - name: Build AAB (Android App Bundle)
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod') }}
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+        run: |
+          flutter build appbundle --build-name ${{ steps.set_build_name.outputs.build_name }} --dart-define=BUILD_TYPE=$ENV
+      
       - name: Get signing report for release
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
         run: |
@@ -170,6 +177,7 @@ jobs:
           cd ..
       
       - uses: ryand56/r2-upload-action@latest
+        name: Upload APK files
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
         with:
           r2-account-id: ${{ secrets.CF_ACCOUNT_ID }}
@@ -177,6 +185,22 @@ jobs:
           r2-secret-access-key: ${{ secrets.CF_R2_SECRET_KEY }}
           r2-bucket: ${{ secrets.CF_R2_BUCKET }}
           source-dir: build/app/outputs/flutter-apk
+          destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
+          output-file-url: false
+          multipart-size: 100
+          max-retries: 5
+          multipart-concurrent: true
+          keep-file-fresh: true
+
+      - uses: ryand56/r2-upload-action@latest
+        name: Upload AAB files
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod') }}
+        with:
+          r2-account-id: ${{ secrets.CF_ACCOUNT_ID }}
+          r2-access-key-id: ${{ secrets.CF_R2_ACCESS_KEY }}
+          r2-secret-access-key: ${{ secrets.CF_R2_SECRET_KEY }}
+          r2-bucket: ${{ secrets.CF_R2_BUCKET }}
+          source-dir: build/app/outputs/bundle/release
           destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
           output-file-url: false
           multipart-size: 100
