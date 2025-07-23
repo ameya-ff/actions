@@ -122,9 +122,9 @@ jobs:
 
       # Web build steps
       - name: Build Web
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
         run: flutter build web --dart-define=BUILD_TYPE=$ENV --release
       
       - name: Deploy to Netlify
