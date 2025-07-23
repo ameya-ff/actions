@@ -25,6 +25,15 @@ on:
         - all
         - android
         - web
+      android-build-type:
+        description: 'Android build type'
+        required: true
+        default: 'aab'
+        type: choice
+        options:
+        - apk
+        - aab
+        - both
 
 # If another release happens while this workflow is still running,
 # cancel the earlier run in favor of the next run.
@@ -156,14 +165,14 @@ jobs:
           ./scripts/android_setup.sh
       
       - name: Build APK
-        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both') }}
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --dart-define=BUILD_TYPE=$ENV
       
       - name: Build AAB (Android App Bundle)
-        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod') }}
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
@@ -178,7 +187,7 @@ jobs:
       
       - uses: ryand56/r2-upload-action@latest
         name: Upload APK files
-        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both') }}
         with:
           r2-account-id: ${{ secrets.CF_ACCOUNT_ID }}
           r2-access-key-id: ${{ secrets.CF_R2_ACCESS_KEY }}
@@ -194,7 +203,7 @@ jobs:
 
       - uses: ryand56/r2-upload-action@latest
         name: Upload AAB files
-        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod') }}
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
         with:
           r2-account-id: ${{ secrets.CF_ACCOUNT_ID }}
           r2-access-key-id: ${{ secrets.CF_R2_ACCESS_KEY }}
