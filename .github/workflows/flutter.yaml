@@ -80,6 +80,16 @@ jobs:
             echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
           fi
       
+      - id: set_version_code
+        shell: bash
+        run: |
+          # Generate a unique version code based on timestamp
+          # This ensures each build has a unique, incrementing version code
+          VERSION_CODE=$(date +%s)
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Generated version code: $VERSION_CODE"
+      
       - run: rsync -a --remove-source-files tmp/ .
       
       - name: Setup Flutter
@@ -169,14 +179,14 @@ jobs:
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --dart-define=BUILD_TYPE=$ENV
+          flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define=BUILD_TYPE=$ENV
       
       - name: Build AAB (Android App Bundle)
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          flutter build appbundle --build-name ${{ steps.set_build_name.outputs.build_name }} --dart-define=BUILD_TYPE=$ENV
+          flutter build appbundle --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define=BUILD_TYPE=$ENV
       
       - name: Get signing report for release
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both') }}
