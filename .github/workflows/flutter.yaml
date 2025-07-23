@@ -4,6 +4,15 @@ on:
     types: [trigger-flutter-workflow]
   workflow_dispatch:
     inputs:
+      android-build-type:
+        description: 'Android build type'
+        required: true
+        default: 'aab'
+        type: choice
+        options:
+        - apk
+        - aab
+        - both
       env:
         description: target env
         required: true
@@ -25,15 +34,6 @@ on:
         - all
         - android
         - web
-      android-build-type:
-        description: 'Android build type'
-        required: true
-        default: 'aab'
-        type: choice
-        options:
-        - apk
-        - aab
-        - both
 
 # If another release happens while this workflow is still running,
 # cancel the earlier run in favor of the next run.
