@@ -122,8 +122,10 @@ jobs:
 
       # Web build steps
       - name: Build Web
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
-        run: flutter build web --release
+        run: flutter build web --dart-define=BUILD_TYPE=$ENV --release
       
       - name: Deploy to Netlify
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
@@ -155,8 +157,10 @@ jobs:
       
       - name: Build APK
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }}
+          flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --dart-define=BUILD_TYPE=$ENV
       
       - name: Get signing report for release
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
