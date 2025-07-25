@@ -234,4 +234,4 @@ jobs:
             serviceAccountJsonPlainText: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
             packageName: ${{ secrets.PLAY_STORE_PACKAGE_NAME }}
             releaseFiles: build/app/outputs/bundle/release/*.aab
-            track: qa
+            track: internal
