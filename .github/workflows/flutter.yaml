@@ -226,3 +226,12 @@ jobs:
           max-retries: 5
           multipart-concurrent: true
           keep-file-fresh: true
+
+      - name: Upload to Google Play Store
+        uses: r0adkll/upload-google-play@v1
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
+        with:
+            serviceAccountJsonPlainText: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
+            packageName: ${{ secrets.PLAY_STORE_PACKAGE_NAME }}
+            releaseFiles: build/app/outputs/bundle/release/*.aab
+            track: qa
