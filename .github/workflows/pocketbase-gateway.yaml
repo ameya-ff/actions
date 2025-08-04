@@ -59,7 +59,7 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/pocketbase-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
+          tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/pocketbase-gateway-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
 
   deploy:
     name: Deploy to GKE
