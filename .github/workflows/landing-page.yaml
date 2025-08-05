@@ -1,5 +1,7 @@
 name: landing-page
 on:
+  repository_dispatch:
+    types: [trigger-landing-page-workflow]
   workflow_dispatch:
     inputs:
       env:
