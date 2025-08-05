@@ -99,5 +99,5 @@ jobs:
         run: |
           git clone -b main --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/infra.git" infra
           kubectl apply -k infra/gke/k8s/$WORKFLOW/$ENV/
-          DEPLOYMENT=$(kubectl get deployments -n $NAMESPACE -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${DE}" | head -n1)
+          DEPLOYMENT=$(kubectl get deployments -n $NAMESPACE -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${DEPLOYMENT_NAME}" | head -n1)
           kubectl patch deployment $DEPLOYMENT -n $NAMESPACE -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\",\"branch\":\"$BRANCH_OR_TAG\"}}}}}"
