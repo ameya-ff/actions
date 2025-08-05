@@ -88,6 +88,8 @@ jobs:
       - name: Deploy and Patch
         shell: bash
         env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          DEPLOYMENT_NAME: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           NAMESPACE: ${{ secrets.GCP_GKE_NAMESPACE_F }}
           OWNER: ${{ secrets.OWNER }}
@@ -96,5 +98,5 @@ jobs:
         run: |
           git clone -b main --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/infra.git" infra
           kubectl apply -k infra/gke/k8s/$WORKFLOW/$ENV/
-          DEPLOYMENT=$(kubectl get deployments -n $NAMESPACE -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${WORKFLOW}" | grep "${ENV}" | head -n1)
-          kubectl patch deployment $DEPLOYMENT -n $NAMESPACE -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\"}}}}}"
+          DEPLOYMENT=$(kubectl get deployments -n $NAMESPACE -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${DEPLOYMENT_NAME}" | head -n1)
+          kubectl patch deployment $DEPLOYMENT -n $NAMESPACE -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\",\"branch\":\"$BRANCH_OR_TAG\"}}}}}"
