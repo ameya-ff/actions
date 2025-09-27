@@ -64,7 +64,7 @@ jobs:
           registry: ${{ secrets.GCP_GAR_DOCKER_REGISTRY }}
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
-      - name: Build and push
+      - name: Build and push - 1
         uses: docker/build-push-action@v6
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
@@ -74,6 +74,16 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/${{ secrets.REPO_B }}-${{ secrets.REPO_B_DOCKER_1 }}-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
+      - name: Build and push - 2
+        uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
+        with:
+          context: ${{ secrets.REPO_B_DOCKER_2 }}/
+          platforms: linux/amd64
+          push: true
+          tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/${{ secrets.REPO_B }}-${{ secrets.REPO_B_DOCKER_2 }}-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
 
   deploy:
     name: Deploy to GKE
@@ -107,8 +117,15 @@ jobs:
           OWNER: ${{ secrets.OWNER }}
           TOKEN: ${{ secrets.GH_TOKEN }}
           WORKFLOW: ${{ github.workflow }}
+          DEPLOYMENT_1: ${{ secrets.REPO_B_DOCKER_1 }}
+          DEPLOYMENT_2: ${{ secrets.REPO_B_DOCKER_2 }}
         run: |
           git clone -b main --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/infra.git" infra
           kubectl apply -k infra/gke/k8s/$WORKFLOW/$ENV/
-          DEPLOYMENT=$(kubectl get deployments -n $NAMESPACE -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${WORKFLOW}" | grep "${ENV}" | head -n1)
+          DEPLOYMENT=$(kubectl get deployments -n $NAMESPACE -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${WORKFLOW}" | grep "${DEPLOYMENT_1}" | grep "${ENV}" | head -n1)
+          kubectl patch deployment $DEPLOYMENT -n $NAMESPACE -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\"}}}}}"
+
+
+          kubectl apply -k infra/gke/k8s/$WORKFLOW/$DEPLOYMENT_2/$ENV/
+          DEPLOYMENT=$(kubectl get deployments -n $NAMESPACE -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${WORKFLOW}" | grep "${DEPLOYMENT_2}" | grep "${ENV}" | head -n1)
           kubectl patch deployment $DEPLOYMENT -n $NAMESPACE -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\"}}}}}"
