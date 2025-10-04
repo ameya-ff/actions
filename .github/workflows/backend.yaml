@@ -74,6 +74,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/${{ secrets.REPO_B }}-${{ secrets.REPO_B_DOCKER_1 }}-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
+          build-args: |
+            GIT_SHA=${{ github.sha }}
       - name: Build and push - 2
         uses: docker/build-push-action@v6
         env:
@@ -84,6 +86,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/${{ secrets.REPO_B }}-${{ secrets.REPO_B_DOCKER_2 }}-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
+          build-args: |
+            GIT_SHA=${{ github.sha }}
 
   deploy:
     name: Deploy to GKE
