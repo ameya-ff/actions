@@ -50,6 +50,19 @@ jobs:
             echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
             echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
           fi 
+      - name: Determine GIT_SHA
+        shell: bash
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+        run: |
+          if [[ "$BRANCH_OR_TAG" == "main" ]]; then
+            cd tmp
+            GIT_SHA=$(git rev-parse --short HEAD)
+            cd ..
+          else
+            GIT_SHA=$BRANCH_OR_TAG
+          fi
+          echo "GIT_SHA=$GIT_SHA" >> $GITHUB_ENV
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Authenticate to Google Cloud
@@ -75,7 +88,7 @@ jobs:
           push: true
           tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/${{ secrets.REPO_B }}-${{ secrets.REPO_B_DOCKER_1 }}-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
           build-args: |
-            GIT_SHA=${{ github.sha }}
+            GIT_SHA=${{ env.GIT_SHA }}
       - name: Build and push - 2
         uses: docker/build-push-action@v6
         env:
@@ -87,7 +100,7 @@ jobs:
           push: true
           tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/${{ secrets.REPO_B }}-${{ secrets.REPO_B_DOCKER_2 }}-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
           build-args: |
-            GIT_SHA=${{ github.sha }}
+            GIT_SHA=${{ env.GIT_SHA }}
 
   deploy:
     name: Deploy to GKE
