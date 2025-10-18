@@ -103,6 +103,11 @@ jobs:
         with:
           distribution: 'adopt'
           java-version: '17'
+          cache: 'gradle'
+          cache-dependency-path: |
+            android/build.gradle
+            android/app/build.gradle
+            android/gradle/wrapper/gradle-wrapper.properties
       
       - uses: actions/cache@v3
         with:
@@ -179,14 +184,14 @@ jobs:
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define=BUILD_TYPE=$ENV
+          flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define=BUILD_TYPE=$ENV --no-pub
       
       - name: Build AAB (Android App Bundle)
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          flutter build appbundle --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define=BUILD_TYPE=$ENV
+          flutter build appbundle --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define=BUILD_TYPE=$ENV --no-pub
       
       - name: Get signing report for release
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both') }}
