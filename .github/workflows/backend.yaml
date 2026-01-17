@@ -89,18 +89,6 @@ jobs:
           tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/${{ secrets.REPO_B }}-${{ secrets.REPO_B_DOCKER_1 }}-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
           build-args: |
             GIT_SHA=${{ env.GIT_SHA }}
-      - name: Build and push - 2
-        uses: docker/build-push-action@v6
-        env:
-          DOCKER_BUILD_RECORD_UPLOAD: false
-          DOCKER_BUILD_SUMMARY: false
-        with:
-          context: ${{ secrets.REPO_B_DOCKER_2 }}/
-          platforms: linux/amd64
-          push: true
-          tags: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}/${{ secrets.REPO_B }}-${{ secrets.REPO_B_DOCKER_2 }}-${{ github.event.client_payload.env || github.event.inputs.env }}:latest
-          build-args: |
-            GIT_SHA=${{ env.GIT_SHA }}
 
   deploy:
     name: Deploy to GKE
