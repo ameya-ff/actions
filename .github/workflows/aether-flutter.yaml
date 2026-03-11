@@ -139,11 +139,6 @@ jobs:
       - run: flutter pub get
       - run: flutter --version
 
-      - name: Setup assets env
-        env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-        run: |
-          ./scripts/override_assets_env.sh
 
       # Web build steps
       - name: Build Web
