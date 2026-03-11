@@ -26,6 +26,15 @@ on:
         description: git ref
         required: true
         default: main
+      platform:
+        description: 'Build platform'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - android
+        - web
 
 # If another release happens while this workflow is still running,
 # cancel the earlier run in favor of the next run.
@@ -130,8 +139,41 @@ jobs:
       - run: flutter pub get
       - run: flutter --version
 
+      - name: Setup assets env
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+        run: |
+          ./scripts/override_assets_env.sh
+
+      # Web build steps
+      - name: Build Web
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+        run: flutter build web --dart-define=BUILD_TYPE=$ENV --release
+      
+      - name: Deploy to Netlify
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
+        uses: ameya-ff/actions-netlify@ameya
+        with:
+          publish-dir: './build/web'
+          production-branch: main
+          deploy-message: "Deploy from GitHub Actions"
+          enable-pull-request-comment: false
+          enable-commit-comment: true
+          enable-commit-status: true
+          overwrites-pull-request-comment: false
+          owner: ${{ secrets.OWNER }}
+          repo: ${{ secrets.REPO_AF }}
+          sha: ${{ github.event.client_payload.sha || github.sha }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && secrets.NETLIFY_SITE_ID_AETHER_PROD || secrets.NETLIFY_SITE_ID_AETHER_DEV }}
+        timeout-minutes: 1
+
       # Android build steps
       - name: Setup Android Keystore from Secrets
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
         env:
           ANDROID_KEYPROPERTIES_BASE_64: ${{ secrets.AETHER_ANDROID_KEYPROPERTIES_BASE_64 }}
           ANDROID_KEYSTORE_BASE_64: ${{ secrets.AETHER_ANDROID_KEYSTORE_BASE_64 }}
@@ -139,21 +181,21 @@ jobs:
           ./scripts/android_setup.sh
 
       - name: Build APK
-        if: ${{ github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both' }}
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both') }}
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define=BUILD_TYPE=$ENV --no-pub
 
       - name: Build AAB (Android App Bundle)
-        if: ${{ github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both' }}
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           flutter build appbundle --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define=BUILD_TYPE=$ENV --no-pub
 
       - name: Get signing report for release
-        if: ${{ github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both' }}
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both') }}
         run: |
           cd android
           ./gradlew signingReport > ../build/app/outputs/flutter-apk/signing_report.txt
@@ -161,7 +203,7 @@ jobs:
 
       - uses: ryand56/r2-upload-action@latest
         name: Upload APK files
-        if: ${{ github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both' }}
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both') }}
         with:
           r2-account-id: ${{ secrets.CF_ACCOUNT_ID }}
           r2-access-key-id: ${{ secrets.CF_R2_ACCESS_KEY }}
@@ -177,7 +219,7 @@ jobs:
 
       - uses: ryand56/r2-upload-action@latest
         name: Upload AAB files
-        if: ${{ github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both' }}
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
         with:
           r2-account-id: ${{ secrets.CF_ACCOUNT_ID }}
           r2-access-key-id: ${{ secrets.CF_R2_ACCESS_KEY }}
@@ -193,7 +235,7 @@ jobs:
 
       - name: Upload to Google Play Store
         uses: r0adkll/upload-google-play@v1
-        if: ${{ (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') && (github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod') }}
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') && (github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod') }}
         with:
             serviceAccountJsonPlainText: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
             packageName: ${{ secrets.AETHER_PLAY_STORE_PACKAGE_NAME }}
