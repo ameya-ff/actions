@@ -98,7 +98,6 @@ jobs:
         with:
           cache: true
           channel: stable
-          flutter-version-file: pubspec.yaml
 
       - uses: actions/setup-java@v3
         with:
