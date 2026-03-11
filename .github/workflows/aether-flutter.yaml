@@ -236,3 +236,4 @@ jobs:
             packageName: ${{ secrets.AETHER_PLAY_STORE_PACKAGE_NAME }}
             releaseFiles: build/app/outputs/bundle/release/*.aab
             track: internal
+            status: draft
