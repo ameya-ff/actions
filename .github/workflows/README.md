@@ -1,13 +1,13 @@
 # Actions / Builders
 
-This directory contains the central GitHub Actions build runner workflows. We use a **two-repo dispatch pattern** where external repositories (like `farflungai/aether_flutter` and `farflungai/flutter`) trigger these central workflows via `repository_dispatch`.
+This directory contains the central GitHub Actions build runner workflows. We use a **two-repo dispatch pattern** where external repositories (like `aether_flutter` and `flutter`) trigger these central workflows via `repository_dispatch`.
 
 This architecture allows us to keep sensitive secrets (like Android Keystore variables, Google Play service accounts, Netlify tokens, Cloudflare R2 credentials) contained within this private repository instead of duplicating them across multiple projects.
 
 ## Components
 
 ### Aether Flutter Workflow (`aether-flutter.yaml`)
-Handles cross-platform CI/CD for the `farflungai/aether_flutter` repository.
+Handles cross-platform CI/CD for the `aether_flutter` repository.
 
 **Triggers:**
 *   **Dev:** Triggered by push to `main` via `trigger-aether-flutter-workflow` dispatch.
@@ -21,5 +21,5 @@ Handles cross-platform CI/CD for the `farflungai/aether_flutter` repository.
 4.  **Google Play Distribution:** When triggered with `env: prod`, it uploads the generated `AAB` to the Google Play Store internal track.
 
 ### Legacy/Other Workflows
-*   `flutter.yaml` - The main CI/CD builder for the original `farflungai/flutter` consumer app.
-*   `flutter-stage.yaml` - A builder that executes pull-request previews (web builds) for the `farflungai/flutter` app.
+*   `flutter.yaml` - The main CI/CD builder for the original `flutter` consumer app.
+*   `flutter-stage.yaml` - A builder that executes pull-request previews (web builds) for the `flutter` app.
