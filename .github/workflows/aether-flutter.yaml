@@ -137,6 +137,7 @@ jobs:
             ${{ runner.os }}-dart-tool-
 
       - run: flutter pub get
+      - run: dart run build_runner build -d
       - run: flutter --version
 
 
