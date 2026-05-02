@@ -52,7 +52,7 @@ jobs:
         env:
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
           OWNER: ${{ secrets.OWNER }}
-          REPO: ${{ secrets.REPO_AETHER }}
+          REPO: ${{ secrets.REPO_B }}
           TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/$REPO.git" tmp
