@@ -33,16 +33,16 @@ jobs:
           # with a multi-stage build using the 'prod' target.
           # The worker differs only by command override in the K8s deployment.
           - service: aether
-            docker_dir: aether
+            docker_dir: backend/aether
             target: prod
           - service: aether-browser
-            docker_dir: aether-browser
+            docker_dir: backend/aether-browser
             target: ""
           - service: aether-audio
-            docker_dir: aether-audio
+            docker_dir: backend/aether-audio
             target: ""
           - service: aether-image
-            docker_dir: aether-image
+            docker_dir: backend/aether-image
             target: ""
 
     steps:
@@ -135,10 +135,11 @@ jobs:
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           NAMESPACE: ${{ secrets.GCP_GKE_NAMESPACE_F }}
-          OWNER: ${{ secrets.OWNER }}
+          REPO: ${{ secrets.REPO_B }}
           TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          git clone -b main --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/infra.git" infra
+          git clone -b main --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/$REPO.git" tmp
+          mv tmp/* .
           kubectl apply -k infra/gke/k8s/aether/$ENV/
 
           # Rolling restart all aether deployments to pick up new images
