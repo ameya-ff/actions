@@ -137,6 +137,9 @@ jobs:
             ${{ runner.os }}-dart-tool-
 
       - run: flutter pub get
+      - name: Setup PowerSync Web assets (sqlite3.wasm + workers)
+        if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
+        run: dart run powersync:setup_web
       - run: dart run build_runner build -d
       - run: flutter --version
 
