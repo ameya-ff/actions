@@ -139,7 +139,7 @@ jobs:
           TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone -b main --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/infra.git" infra
-          kubectl apply -k infra/gke/k8s/aether/$ENV/
+          kubectl apply --server-side --force-conflicts -k infra/gke/k8s/aether/$ENV/
 
           # Rolling restart all aether deployments to pick up new images
           for DEPLOY in aether-core aether-worker aether-browser aether-audio aether-image; do
