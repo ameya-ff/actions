@@ -139,6 +139,15 @@ jobs:
           TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone -b main --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/infra.git" infra
+
+          # Strip any env vars that the live deployment has as hardcoded values but the
+          # YAML now declares as secretKeyRef.  Without this, the strategic-merge patch
+          # produces env entries with both `value` and `valueFrom` set which K8s rejects.
+          for VAR in SUPABASE_WEBHOOK_SECRET AETHER_GATEWAY_IDENTITY_SECRET AETHER_WEBHOOK_SECRET; do
+            kubectl set env deployment/aether-core -n $NAMESPACE "${VAR}-" 2>/dev/null || true
+            kubectl set env deployment/aether-worker -n $NAMESPACE "${VAR}-" 2>/dev/null || true
+          done
+
           kubectl apply --server-side --force-conflicts -k infra/gke/k8s/aether/$ENV/
 
           # Rolling restart all aether deployments to pick up new images
