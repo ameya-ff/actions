@@ -35,6 +35,7 @@ on:
         - all
         - android
         - web
+        - macos
 
 # If another release happens while this workflow is still running,
 # cancel the earlier run in favor of the next run.
@@ -241,3 +242,105 @@ jobs:
             releaseFiles: build/app/outputs/bundle/release/*.aab
             track: internal
             status: draft
+
+  build-macos:
+    name: Build Aether Flutter App (macOS)
+    if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'macos' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - shell: bash
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          OWNER: ${{ secrets.OWNER }}
+          REPO: ${{ secrets.REPO_AF }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
+
+      - id: set_build_name
+        shell: bash
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+        run: |
+          if [[ "${ENV}" == "dev" ]]; then
+            BUILD_NAME="v$(date +'%Y-%m-%d::%H:%M')-$ENV"
+            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+            echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
+          else
+            BUILD_NAME="$BRANCH_OR_TAG"
+            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+            echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
+          fi
+          cd tmp
+          COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
+          if [[ -z "$COMMIT_MESSAGE" ]]; then
+            echo "No commit message found"
+          else
+            echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
+          fi
+
+      - id: set_version_code
+        shell: bash
+        run: |
+          VERSION_CODE=$(date +%s)
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Generated version code: $VERSION_CODE"
+
+      - run: rsync -a --remove-source-files tmp/ .
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          cache: true
+          channel: stable
+          flutter-version-file: pubspec.yaml
+
+      - name: Cache Flutter pub dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-cache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-cache-
+
+      - name: Cache Dart tool
+        uses: actions/cache@v3
+        with:
+          path: .dart_tool
+          key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-dart-tool-
+
+      - run: flutter pub get
+      - run: dart run build_runner build -d
+
+      - name: Build macOS
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+        run: flutter build macos --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define-from-file=env/$ENV.json --release
+
+      - name: Prepare macOS artifact
+        run: |
+          mkdir -p macos_artifact
+          cd build/macos/Build/Products/Release
+          zip -r ../../../../../macos_artifact/aether_flutter_macos.zip aether_flutter.app
+
+      - uses: ryand56/r2-upload-action@latest
+        name: Upload macOS zip
+        with:
+          r2-account-id: ${{ secrets.CF_ACCOUNT_ID }}
+          r2-access-key-id: ${{ secrets.CF_R2_ACCESS_KEY }}
+          r2-secret-access-key: ${{ secrets.CF_R2_SECRET_KEY }}
+          r2-bucket: ${{ secrets.CF_R2_BUCKET }}
+          source-dir: macos_artifact
+          destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}/macos
+          output-file-url: false
+          multipart-size: 100
+          max-retries: 5
+          multipart-concurrent: true
+          keep-file-fresh: true
