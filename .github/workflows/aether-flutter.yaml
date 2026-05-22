@@ -340,6 +340,22 @@ jobs:
               print('project.pbxproj not found')
           "
 
+      - name: Create dummy GoogleService-Info.plist for CI
+        run: |
+          mkdir -p macos/Runner
+          cat << 'EOF' > macos/Runner/GoogleService-Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+          	<key>API_KEY</key>
+          	<string>DUMMY_KEY</string>
+          	<key>GOOGLE_APP_ID</key>
+          	<string>DUMMY_APP_ID</string>
+          </dict>
+          </plist>
+          EOF
+
       - name: Build macOS
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
