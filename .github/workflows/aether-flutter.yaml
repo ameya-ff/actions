@@ -327,12 +327,15 @@ jobs:
           if os.path.exists(path):
               with open(path, 'r') as f:
                   content = f.read()
-              # Change ProvisioningStyle to Manual to disable automatic profile search,
-              # but KEEP DEVELOPMENT_TEAM intact so Xcode does not complain about missing team.
+              # Change CODE_SIGN_STYLE to Manual
+              content = content.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
+              # Change ProvisioningStyle to Manual
               content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
+              # Change SDK-specific sign identity to '-' (Sign to Run Locally)
+              content = content.replace('\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"Apple Development\";', '\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"-\";')
               with open(path, 'w') as f:
                   f.write(content)
-              print('Successfully set ProvisioningStyle to Manual')
+              print('Successfully updated Xcode codesigning settings for CI')
           else:
               print('project.pbxproj not found')
           "
