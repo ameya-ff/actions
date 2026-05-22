@@ -322,7 +322,10 @@ jobs:
       - name: Build macOS
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-        run: flutter build macos --no-codesign --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define-from-file=env/$ENV.json --release
+          CODE_SIGNING_ALLOWED: "NO"
+          CODE_SIGNING_REQUIRED: "NO"
+          CODE_SIGN_IDENTITY: ""
+        run: flutter build macos --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define-from-file=env/$ENV.json --release
 
       - name: Prepare macOS artifact
         run: |
