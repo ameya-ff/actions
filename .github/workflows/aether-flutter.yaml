@@ -328,10 +328,18 @@ jobs:
         run: |
           mkdir -p macos_artifact
           cd build/macos/Build/Products/Release
-          zip -r ../../../../../macos_artifact/aether_flutter_macos.zip aether_flutter.app
+          # Rename to a professional name: Aether.app
+          mv aether_flutter.app Aether.app
+          # Force deep ad-hoc codesigning to prevent Gatekeeper instant crash issues on launch
+          codesign --force --deep --sign - Aether.app
+          # Create zip artifact
+          zip -r ../../../../../macos_artifact/Aether.zip Aether.app
+          cd ../../../../../
+          # Create DMG installer using hdiutil
+          hdiutil create -volname "Aether" -srcfolder build/macos/Build/Products/Release/Aether.app -ov -format UDZO macos_artifact/Aether.dmg
 
       - uses: ryand56/r2-upload-action@latest
-        name: Upload macOS zip
+        name: Upload macOS files to R2
         with:
           r2-account-id: ${{ secrets.CF_ACCOUNT_ID }}
           r2-access-key-id: ${{ secrets.CF_R2_ACCESS_KEY }}
