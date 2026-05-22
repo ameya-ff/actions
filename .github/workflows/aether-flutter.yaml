@@ -319,21 +319,20 @@ jobs:
       - run: flutter pub get
       - run: dart run build_runner build -d
 
-      - name: Strip codesigning settings for CI
+      - name: Configure Xcode signing for CI
         run: |
           python3 -c "
-          import os, re
+          import os
           path = 'macos/Runner.xcodeproj/project.pbxproj'
           if os.path.exists(path):
               with open(path, 'r') as f:
                   content = f.read()
-              content = re.sub(r'DEVELOPMENT_TEAM\s*=\s*[^;]+;', '', content)
-              content = re.sub(r'PROVISIONING_PROFILE_SPECIFIER\s*=\s*[^;]+;', '', content)
-              content = re.sub(r'PROVISIONING_PROFILE\s*=\s*[^;]+;', '', content)
+              # Change ProvisioningStyle to Manual to disable automatic profile search,
+              # but KEEP DEVELOPMENT_TEAM intact so Xcode does not complain about missing team.
               content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
               with open(path, 'w') as f:
                   f.write(content)
-              print('Successfully stripped codesigning from project.pbxproj')
+              print('Successfully set ProvisioningStyle to Manual')
           else:
               print('project.pbxproj not found')
           "
