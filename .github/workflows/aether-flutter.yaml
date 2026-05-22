@@ -319,6 +319,25 @@ jobs:
       - run: flutter pub get
       - run: dart run build_runner build -d
 
+      - name: Strip codesigning settings for CI
+        run: |
+          python3 -c "
+          import os, re
+          path = 'macos/Runner.xcodeproj/project.pbxproj'
+          if os.path.exists(path):
+              with open(path, 'r') as f:
+                  content = f.read()
+              content = re.sub(r'DEVELOPMENT_TEAM\s*=\s*[^;]+;', '', content)
+              content = re.sub(r'PROVISIONING_PROFILE_SPECIFIER\s*=\s*[^;]+;', '', content)
+              content = re.sub(r'PROVISIONING_PROFILE\s*=\s*[^;]+;', '', content)
+              content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
+              with open(path, 'w') as f:
+                  f.write(content)
+              print('Successfully stripped codesigning from project.pbxproj')
+          else:
+              print('project.pbxproj not found')
+          "
+
       - name: Build macOS
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
