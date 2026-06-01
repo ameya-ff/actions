@@ -362,17 +362,18 @@ jobs:
       # SdNative CocoaPods local pods. The build artifacts are gitignored so
       # they must be compiled from source on every fresh runner.
       # Cache is keyed on the CMakeLists.txt so a cache hit skips compilation.
+      # Using explicit restore/save guarantees caching even if flutter fails.
       # ──────────────────────────────────────────────────────────────────────
-      - name: Cache LlamaNative build artifacts
+      - name: Restore LlamaNative build artifacts
         id: cache-llama
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: native/llama/build
           key: ${{ runner.os }}-llama-${{ hashFiles('native/llama/CMakeLists.txt') }}
 
-      - name: Cache SdNative build artifacts
+      - name: Restore SdNative build artifacts
         id: cache-sd
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: native/stable_diffusion/build
           key: ${{ runner.os }}-sd-${{ hashFiles('native/stable_diffusion/CMakeLists.txt') }}
@@ -383,11 +384,25 @@ jobs:
           echo "=== Building LlamaNative (llama.cpp) ==="
           cd native/llama && ./build.sh
 
+      - name: Save LlamaNative build artifacts
+        if: steps.cache-llama.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: native/llama/build
+          key: ${{ steps.cache-llama.outputs.cache-primary-key }}
+
       - name: Build SdNative static libs (stable-diffusion.cpp)
         if: steps.cache-sd.outputs.cache-hit != 'true'
         run: |
           echo "=== Building SdNative (stable-diffusion.cpp) ==="
           cd native/stable_diffusion && ./build.sh
+
+      - name: Save SdNative build artifacts
+        if: steps.cache-sd.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: native/stable_diffusion/build
+          key: ${{ steps.cache-sd.outputs.cache-primary-key }}
 
       - name: Build macOS
         env:
