@@ -444,26 +444,21 @@ jobs:
               print('project.pbxproj not found')
           "
 
-      - name: Strip Restricted Entitlements for CI
+      - name: Install provisioning profile
         run: |
-          # Both aps-environment and keychain-access-groups are "restricted" entitlements.
-          # macOS amfid (-413) will kill the app on launch if these are present in a
-          # Developer ID Application signed app WITHOUT an embedded provisioning profile.
-          # We strip them both here for the CI build. The keychain entitlement would only
-          # be needed for Firebase auth session persistence, which is a separate issue.
-          plutil -remove "com\.apple\.developer\.aps-environment" macos/Runner/Release.entitlements || true
-          plutil -remove "keychain-access-groups" macos/Runner/Release.entitlements || true
-          
-          # Manually expand $(AppIdentifierPrefix) because we are bypassing Xcode's codesign step.
-          # If we leave it as $(AppIdentifierPrefix), amfid rejects it because it doesn't match the Team ID.
+          # Embed the Developer ID provisioning profile so restricted entitlements
+          # (keychain-access-groups, aps-environment) are allowed by amfid.
+          # Without this, macOS kills the app on launch with exit code 137 / AMFI -413.
+          PP_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PP_DIR"
+          echo "${{ secrets.MAC_PROVISION_PROFILE }}" | base64 --decode > "$PP_DIR/aether_macos.provisionprofile"
+          # Expand $(AppIdentifierPrefix) so the entitlement matches the Team ID prefix.
           sed -i '' 's/$(AppIdentifierPrefix)/JDXS7993X9./g' macos/Runner/Release.entitlements
+          echo "Provisioning profile installed ✓"
 
       - name: Build macOS
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          CODE_SIGNING_ALLOWED: "NO"
-          CODE_SIGNING_REQUIRED: "NO"
-          CODE_SIGN_IDENTITY: ""
         run: |
           flutter build macos \
             --build-name ${{ steps.set_build_name.outputs.build_name }} \
@@ -477,16 +472,35 @@ jobs:
           cd build/macos/Build/Products/Release
           # Rename to a professional name: Aether.app
           mv aether_flutter.app Aether.app
-          # Manually sign the app bundle with the Developer ID Application certificate
-          # We provide the entitlements explicitly to ensure keychain-access-groups is preserved
-          codesign --force --options runtime --deep --sign "Developer ID Application: Farflung, Inc. (JDXS7993X9)" --entitlements ../../../../../macos/Runner/Release.entitlements Aether.app
-          # Verify the app is properly signed with Developer ID (not ad-hoc)
+          # Re-sign with Developer ID after Xcode's ad-hoc signing, preserving
+          # the embedded provisioning profile so restricted entitlements are valid.
+          codesign --force --options runtime --deep \
+            --sign "Developer ID Application: Farflung, Inc. (JDXS7993X9)" \
+            --entitlements ../../../../../macos/Runner/Release.entitlements \
+            Aether.app
           codesign --verify --verbose Aether.app
-          # Create zip artifact
-          zip -r ../../../../../macos_artifact/Aether.zip Aether.app
+          echo "✅ App signed with Developer ID"
+          # Create zip for notarization submission (notarytool requires zip or dmg)
+          ditto -c -k --keepParent Aether.app ../../../../../macos_artifact/Aether.zip
           cd ../../../../../
           # Create DMG installer using hdiutil
           hdiutil create -volname "Aether" -srcfolder build/macos/Build/Products/Release/Aether.app -ov -format UDZO macos_artifact/Aether.dmg
+
+      - name: Notarize macOS app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARYTOOL_APP_PASSWORD: ${{ secrets.NOTARYTOOL_APP_PASSWORD }}
+        run: |
+          echo "Submitting to Apple notarization service..."
+          xcrun notarytool submit macos_artifact/Aether.zip \
+            --apple-id "$APPLE_ID" \
+            --team-id "JDXS7993X9" \
+            --password "$NOTARYTOOL_APP_PASSWORD" \
+            --wait \
+            --timeout 10m
+          # Staple the ticket to the DMG so Gatekeeper works offline
+          xcrun stapler staple macos_artifact/Aether.dmg
+          echo "✅ Notarization complete — DMG stapled"
 
       - uses: ryand56/r2-upload-action@latest
         name: Upload macOS files to R2
