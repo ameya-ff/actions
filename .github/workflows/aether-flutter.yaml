@@ -312,8 +312,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .dart_tool
-          key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
+          # Include lib/** Dart source hashes so build_runner cache invalidates
+          # when source files change (not only when pubspec.lock changes).
+          key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock', 'lib/**/*.dart', 'packages/**/*.dart') }}
           restore-keys: |
+            ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
             ${{ runner.os }}-dart-tool-
 
       - run: flutter pub get
@@ -423,6 +426,29 @@ jobs:
           path: native/stable_diffusion/build
           key: ${{ steps.cache-sd.outputs.cache-primary-key }}
 
+      # ──────────────────────────────────────────────────────────────────────
+      # Xcode build caches (CocoaPods + DerivedData)
+      # CocoaPods: restoring macos/Pods skips pod install (~1-2 min).
+      # DerivedData: restoring compiled frameworks/Swift modules skips
+      # recompiling all pods when only Dart code changed (~7-8 min).
+      # Keys include Podfile.lock + pubspec.lock so caches bust on dep changes.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Restore CocoaPods cache
+        id: cache-pods
+        uses: actions/cache/restore@v4
+        with:
+          path: macos/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('macos/Podfile.lock') }}
+          restore-keys: ${{ runner.os }}-pods-
+
+      - name: Restore Xcode DerivedData cache
+        id: cache-derived
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-xcode-${{ hashFiles('macos/Podfile.lock', '**/pubspec.lock') }}
+          restore-keys: ${{ runner.os }}-xcode-
+
       - name: Configure Xcode signing for CI
         run: |
           python3 -c "
@@ -466,6 +492,20 @@ jobs:
             --dart-define-from-file=env/$ENV.json \
             --release
 
+      - name: Save CocoaPods cache
+        if: steps.cache-pods.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: macos/Pods
+          key: ${{ steps.cache-pods.outputs.cache-primary-key }}
+
+      - name: Save Xcode DerivedData cache
+        if: steps.cache-derived.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ steps.cache-derived.outputs.cache-primary-key }}
+
       - name: Prepare macOS artifact
         run: |
           mkdir -p macos_artifact
@@ -502,11 +542,11 @@ jobs:
           xcrun stapler staple "$APP"
           echo "✅ App stapled"
           # Now create the DMG from the already-stapled app.
-          # This means the DMG contains a notarized app — Gatekeeper is satisfied.
+          # The .app inside the DMG carries the notarization ticket — that is what
+          # Gatekeeper checks. The DMG itself cannot be stapled unless it was directly
+          # submitted to notarization (our ticket is for the zip, not this DMG).
           hdiutil create -volname "Aether" -srcfolder "$APP" -ov -format UDZO macos_artifact/Aether.dmg
-          # Also staple the DMG itself so it works fully offline.
-          xcrun stapler staple macos_artifact/Aether.dmg
-          echo "✅ Notarization complete — app and DMG both stapled"
+          echo "✅ Notarization complete — app stapled, DMG contains notarized app"
 
       - uses: ryand56/r2-upload-action@latest
         name: Upload macOS files to R2
