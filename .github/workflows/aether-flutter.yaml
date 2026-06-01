@@ -446,10 +446,13 @@ jobs:
 
       - name: Strip Restricted Entitlements for CI
         run: |
-          # The Developer ID Application certificate cannot grant aps-environment
-          # without an embedded Provisioning Profile. We strip it here so amfid
-          # doesn't instantly kill the app on launch (Exit code 137).
+          # Both aps-environment and keychain-access-groups are "restricted" entitlements.
+          # macOS amfid (-413) will kill the app on launch if these are present in a
+          # Developer ID Application signed app WITHOUT an embedded provisioning profile.
+          # We strip them both here for the CI build. The keychain entitlement would only
+          # be needed for Firebase auth session persistence, which is a separate issue.
           plutil -remove "com\.apple\.developer\.aps-environment" macos/Runner/Release.entitlements || true
+          plutil -remove "keychain-access-groups" macos/Runner/Release.entitlements || true
           
           # Manually expand $(AppIdentifierPrefix) because we are bypassing Xcode's codesign step.
           # If we leave it as $(AppIdentifierPrefix), amfid rejects it because it doesn't match the Team ID.
