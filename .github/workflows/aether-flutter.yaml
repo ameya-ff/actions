@@ -340,21 +340,12 @@ jobs:
               print('project.pbxproj not found')
           "
 
-      - name: Create dummy GoogleService-Info.plist for CI
+      - name: Inject GoogleService-Info.plist from Secrets
+        env:
+          MACOS_GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.MACOS_GOOGLE_SERVICE_INFO_PLIST }}
         run: |
           mkdir -p macos/Runner
-          cat << 'EOF' > macos/Runner/GoogleService-Info.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-          	<key>API_KEY</key>
-          	<string>DUMMY_KEY</string>
-          	<key>GOOGLE_APP_ID</key>
-          	<string>DUMMY_APP_ID</string>
-          </dict>
-          </plist>
-          EOF
+          echo "$MACOS_GOOGLE_SERVICE_INFO_PLIST" > macos/Runner/GoogleService-Info.plist
 
       # ──────────────────────────────────────────────────────────────────────
       # Native library builds (llama.cpp + stable-diffusion.cpp)
