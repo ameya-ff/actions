@@ -513,16 +513,39 @@ jobs:
         run: |
           mkdir -p macos_artifact
           cd build/macos/Build/Products/Release
-          # Rename to a professional name: Aether.app
           mv aether_flutter.app Aether.app
-          # Re-sign with Developer ID after Xcode's ad-hoc signing, preserving
-          # the embedded provisioning profile so restricted entitlements are valid.
-          codesign --force --options runtime --deep \
-            --sign "Developer ID Application: Farflung, Inc. (JDXS7993X9)" \
-            --entitlements ../../../../../macos/Runner/Release.entitlements \
+
+          CERT="Developer ID Application: Farflung, Inc. (JDXS7993X9)"
+          ENTITLEMENTS="../../../../../macos/Runner/Release.entitlements"
+          PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos.provisionprofile"
+
+          # 1. Embed the provisioning profile into the app bundle.
+          #    Required for restricted entitlements (keychain-access-groups,
+          #    aps-environment) to be accepted by amfid at launch.
+          cp "$PP" Aether.app/Contents/embedded.provisionprofile
+
+          # 2. Sign all nested dylibs individually.
+          find Aether.app -name "*.dylib" | while read lib; do
+            codesign --force --options runtime --sign "$CERT" "$lib"
+          done
+
+          # 3. Sign each .framework individually (do NOT use --deep).
+          #    codesign --deep is deprecated and silently skips flat-format
+          #    frameworks (no Contents/ dir), leaving them with invalid signatures
+          #    that cause Gatekeeper to reject the entire app bundle.
+          find Aether.app/Contents/Frameworks -maxdepth 1 -name "*.framework" | while read fw; do
+            codesign --force --options runtime --sign "$CERT" "$fw"
+          done
+
+          # 4. Sign the main app bundle last (must come after all nested items).
+          codesign --force --options runtime \
+            --sign "$CERT" \
+            --entitlements "$ENTITLEMENTS" \
             Aether.app
+
           codesign --verify --verbose Aether.app
           echo "✅ App signed with Developer ID"
+
           # Create zip for notarization (ticket is issued against the app content hash)
           ditto -c -k --keepParent Aether.app ../../../../../macos_artifact/Aether.zip
           cd ../../../../../
