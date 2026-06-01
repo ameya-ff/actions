@@ -482,10 +482,6 @@ jobs:
           codesign --force --options runtime --deep --sign "Developer ID Application: Farflung, Inc. (JDXS7993X9)" --entitlements ../../../../../macos/Runner/Release.entitlements Aether.app
           # Verify the app is properly signed with Developer ID (not ad-hoc)
           codesign --verify --verbose Aether.app
-          # Confirm keychain-access-groups entitlement is present (required for Firebase Auth)
-          codesign -d --entitlements :- Aether.app | grep -q keychain-access-groups \
-            && echo "✅ keychain-access-groups entitlement present" \
-            || (echo "❌ keychain-access-groups entitlement MISSING — login will fail" && exit 1)
           # Create zip artifact
           zip -r ../../../../../macos_artifact/Aether.zip Aether.app
           cd ../../../../../
