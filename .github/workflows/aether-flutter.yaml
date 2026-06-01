@@ -388,6 +388,8 @@ jobs:
         run: |
           echo "=== Building SdNative (stable-diffusion.cpp) ==="
           cd native/stable_diffusion && ./build.sh
+
+      - name: Build macOS
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           CODE_SIGNING_ALLOWED: "NO"
