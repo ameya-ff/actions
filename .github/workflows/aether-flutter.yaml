@@ -459,12 +459,14 @@ jobs:
                   content = f.read()
               content = content.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
               content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
-              # Use ad-hoc signing for the Xcode build phase. This skips profile
-              # capability validation (aps-environment requires Push Notifications
-              # in the profile which our Developer ID profile doesn't have).
-              # We re-sign with Developer ID manually in the artifact step.
+              # Set Developer ID identity — Xcode signs all frameworks correctly
+              # and embeds the provisioning profile automatically.
               content = content.replace('\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"Apple Development\";',
-                                        '\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"-\";')
+                                        '\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"Developer ID Application\";')
+              # Tell Xcode exactly which profile to use by name so it doesn't
+              # search and fail. Profile name must match Apple Developer portal.
+              content = content.replace('PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether;',
+                                        'PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"Aether macOS Developer ID\";\n\t\t\t\tDEVELOPMENT_TEAM = JDXS7993X9;')
               with open(path, 'w') as f:
                   f.write(content)
               print('Successfully updated Xcode codesigning settings for CI')
@@ -514,33 +516,13 @@ jobs:
           cd build/macos/Build/Products/Release
           mv aether_flutter.app Aether.app
 
-          CERT="Developer ID Application: Farflung, Inc. (JDXS7993X9)"
-          ENTITLEMENTS="../../../../../macos/Runner/Release.entitlements"
-          PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos.provisionprofile"
-
-          # 1. Embed the provisioning profile into the app bundle.
-          cp "$PP" Aether.app/Contents/embedded.provisionprofile
-
-          # 2. Sign all nested dylibs individually.
-          find Aether.app -name "*.dylib" | while read lib; do
-            codesign --force --options runtime --sign "$CERT" "$lib"
-          done
-
-          # 3. Sign each .framework individually (NOT --deep which silently fails
-          #    on flat-format frameworks, causing Gatekeeper rejection).
-          find Aether.app/Contents/Frameworks -maxdepth 1 -name "*.framework" | while read fw; do
-            codesign --force --options runtime --sign "$CERT" "$fw"
-          done
-
-          # 4. Sign the outer app bundle last.
-          codesign --force --options runtime \
-            --sign "$CERT" \
-            --entitlements "$ENTITLEMENTS" \
-            Aether.app
-
+          # Xcode signed everything correctly:
+          # - Developer ID certificate applied to all nested frameworks
+          # - Provisioning profile embedded (Contents/embedded.provisionprofile)
+          # - Entitlements (aps-environment, keychain-access-groups) applied
           codesign --verify --verbose Aether.app
           spctl --assess --verbose Aether.app 2>&1 || true
-          echo "✅ App signed with Developer ID"
+          echo "✅ App signed with Developer ID by Xcode"
 
           ditto -c -k --keepParent Aether.app ../../../../../macos_artifact/Aether.zip
           cd ../../../../../
