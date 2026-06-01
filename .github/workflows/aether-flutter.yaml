@@ -436,7 +436,7 @@ jobs:
               # Change ProvisioningStyle to Manual
               content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
               # Change SDK-specific sign identity to '-' (Sign to Run Locally)
-              content = content.replace('"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";', '"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";')
+              content = content.replace('\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"Apple Development\";', '\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"-\";')
               with open(path, 'w') as f:
                   f.write(content)
               print('Successfully updated Xcode codesigning settings for CI')
