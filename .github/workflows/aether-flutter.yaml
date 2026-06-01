@@ -480,17 +480,16 @@ jobs:
             Aether.app
           codesign --verify --verbose Aether.app
           echo "✅ App signed with Developer ID"
-          # Create zip for notarization submission (notarytool requires zip or dmg)
+          # Create zip for notarization (ticket is issued against the app content hash)
           ditto -c -k --keepParent Aether.app ../../../../../macos_artifact/Aether.zip
           cd ../../../../../
-          # Create DMG installer using hdiutil
-          hdiutil create -volname "Aether" -srcfolder build/macos/Build/Products/Release/Aether.app -ov -format UDZO macos_artifact/Aether.dmg
 
       - name: Notarize macOS app
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           NOTARYTOOL_APP_PASSWORD: ${{ secrets.NOTARYTOOL_APP_PASSWORD }}
         run: |
+          APP=build/macos/Build/Products/Release/Aether.app
           echo "Submitting to Apple notarization service..."
           xcrun notarytool submit macos_artifact/Aether.zip \
             --apple-id "$APPLE_ID" \
@@ -498,9 +497,16 @@ jobs:
             --password "$NOTARYTOOL_APP_PASSWORD" \
             --wait \
             --timeout 10m
-          # Staple the ticket to the DMG so Gatekeeper works offline
+          # Staple the notarization ticket directly to the .app bundle.
+          # The ticket is indexed by the app's content hash (not the zip's hash).
+          xcrun stapler staple "$APP"
+          echo "✅ App stapled"
+          # Now create the DMG from the already-stapled app.
+          # This means the DMG contains a notarized app — Gatekeeper is satisfied.
+          hdiutil create -volname "Aether" -srcfolder "$APP" -ov -format UDZO macos_artifact/Aether.dmg
+          # Also staple the DMG itself so it works fully offline.
           xcrun stapler staple macos_artifact/Aether.dmg
-          echo "✅ Notarization complete — DMG stapled"
+          echo "✅ Notarization complete — app and DMG both stapled"
 
       - uses: ryand56/r2-upload-action@latest
         name: Upload macOS files to R2
