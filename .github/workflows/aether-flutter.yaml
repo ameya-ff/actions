@@ -423,9 +423,33 @@ jobs:
           path: native/stable_diffusion/build
           key: ${{ steps.cache-sd.outputs.cache-primary-key }}
 
+      - name: Configure Xcode signing for CI
+        run: |
+          python3 -c "
+          import os
+          path = 'macos/Runner.xcodeproj/project.pbxproj'
+          if os.path.exists(path):
+              with open(path, 'r') as f:
+                  content = f.read()
+              # Change CODE_SIGN_STYLE to Manual
+              content = content.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
+              # Change ProvisioningStyle to Manual
+              content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
+              # Change SDK-specific sign identity to '-' (Sign to Run Locally)
+              content = content.replace('"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";', '"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";')
+              with open(path, 'w') as f:
+                  f.write(content)
+              print('Successfully updated Xcode codesigning settings for CI')
+          else:
+              print('project.pbxproj not found')
+          "
+
       - name: Build macOS
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          CODE_SIGNING_ALLOWED: "NO"
+          CODE_SIGNING_REQUIRED: "NO"
+          CODE_SIGN_IDENTITY: ""
         run: |
           flutter build macos \
             --build-name ${{ steps.set_build_name.outputs.build_name }} \
@@ -439,6 +463,9 @@ jobs:
           cd build/macos/Build/Products/Release
           # Rename to a professional name: Aether.app
           mv aether_flutter.app Aether.app
+          # Manually sign the app bundle with the Developer ID Application certificate
+          # We provide the entitlements explicitly to ensure keychain-access-groups is preserved
+          codesign --force --options runtime --deep --sign "Developer ID Application: Farflung, Inc. (JDXS7993X9)" --entitlements ../../../../../macos/Runner/Release.entitlements Aether.app
           # Verify the app is properly signed with Developer ID (not ad-hoc)
           codesign --verify --verbose Aether.app
           # Confirm keychain-access-groups entitlement is present (required for Firebase Auth)
