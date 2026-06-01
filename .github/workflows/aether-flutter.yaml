@@ -444,6 +444,13 @@ jobs:
               print('project.pbxproj not found')
           "
 
+      - name: Strip Restricted Entitlements for CI
+        run: |
+          # The Developer ID Application certificate cannot grant aps-environment
+          # without an embedded Provisioning Profile. We strip it here so amfid
+          # doesn't instantly kill the app on launch (Exit code 137).
+          plutil -remove com.apple.developer.aps-environment macos/Runner/Release.entitlements || true
+
       - name: Build macOS
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
