@@ -459,14 +459,14 @@ jobs:
                   content = f.read()
               content = content.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
               content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
-              # Set Developer ID identity — Xcode signs all frameworks correctly
-              # and embeds the provisioning profile automatically.
+              # Ad-hoc for the Xcode build phase — skips profile capability
+              # validation. We re-sign with Developer ID after the build.
               content = content.replace('\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"Apple Development\";',
-                                        '\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"Developer ID Application\";')
-              # Tell Xcode exactly which profile to use by name so it doesn't
-              # search and fail. Profile name must match Apple Developer portal.
-              content = content.replace('PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether;',
-                                        'PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"Aether macOS Developer ID\";\n\t\t\t\tDEVELOPMENT_TEAM = JDXS7993X9;')
+                                        '\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"-\";')
+              # Set empty PROVISIONING_PROFILE_SPECIFIER to the real profile
+              # so Xcode embeds it (needed for restricted entitlements).
+              content = content.replace('PROVISIONING_PROFILE_SPECIFIER = "";',
+                                        'PROVISIONING_PROFILE_SPECIFIER = \"Aether macOS Developer ID\";')
               with open(path, 'w') as f:
                   f.write(content)
               print('Successfully updated Xcode codesigning settings for CI')
@@ -516,13 +516,76 @@ jobs:
           cd build/macos/Build/Products/Release
           mv aether_flutter.app Aether.app
 
-          # Xcode signed everything correctly:
-          # - Developer ID certificate applied to all nested frameworks
-          # - Provisioning profile embedded (Contents/embedded.provisionprofile)
-          # - Entitlements (aps-environment, keychain-access-groups) applied
+          CERT="Developer ID Application: Farflung, Inc. (JDXS7993X9)"
+          ENTITLEMENTS="../../../../../macos/Runner/Release.entitlements"
+          PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos.provisionprofile"
+
+          # ── Step 1: Repair versioned-framework symlinks ──────────────────
+          # Xcode's framework-embedding copy (or the cache restore's tar)
+          # sometimes dereferences symlinks into regular files. Without the
+          # Versions/Current → A symlink and the root-level binary symlink,
+          # codesign cannot determine the bundle type and reports
+          # "bundle format is ambiguous", causing spctl / Gatekeeper to reject
+          # the entire app.
+          find Aether.app/Contents/Frameworks -maxdepth 1 -name "*.framework" | while read fw; do
+            fw_name=$(basename "$fw" .framework)
+            versions="$fw/Versions"
+            if [ -d "$versions" ]; then
+              # Restore Versions/Current → A symlink
+              if [ -d "$versions/A" ] && [ ! -L "$versions/Current" ]; then
+                rm -rf "$versions/Current"
+                ln -s "A" "$versions/Current"
+                echo "Restored symlink: $fw_name Versions/Current → A"
+              fi
+              # Restore root-level binary symlink
+              if [ -f "$versions/Current/$fw_name" ] && [ ! -L "$fw/$fw_name" ]; then
+                rm -f "$fw/$fw_name"
+                ln -sf "Versions/Current/$fw_name" "$fw/$fw_name"
+                echo "Restored symlink: $fw_name/$fw_name → Versions/Current/$fw_name"
+              fi
+              # Restore root-level Resources symlink
+              if [ -d "$versions/Current/Resources" ] && [ ! -L "$fw/Resources" ]; then
+                rm -rf "$fw/Resources"
+                ln -sf "Versions/Current/Resources" "$fw/Resources"
+                echo "Restored symlink: $fw_name/Resources → Versions/Current/Resources"
+              fi
+              # Restore root-level Headers symlink (if present)
+              if [ -d "$versions/Current/Headers" ] && [ ! -L "$fw/Headers" ]; then
+                rm -rf "$fw/Headers"
+                ln -sf "Versions/Current/Headers" "$fw/Headers"
+              fi
+            fi
+          done
+
+          # ── Step 2: Remove stray CodeResources at Contents/ root ─────────
+          # Artefact from a prior ad-hoc signing pass; confuses codesign's
+          # bundle-type detection alongside the real _CodeSignature/ dir.
+          rm -f Aether.app/Contents/CodeResources
+
+          # ── Step 3: Embed provisioning profile ───────────────────────────
+          cp "$PP" Aether.app/Contents/embedded.provisionprofile
+
+          # ── Step 4: Sign dylibs ──────────────────────────────────────────
+          find Aether.app -name "*.dylib" | while read lib; do
+            codesign --force --options runtime --sign "$CERT" "$lib"
+          done
+
+          # ── Step 5: Sign frameworks (innermost first, NOT --deep) ────────
+          # --deep is deprecated and silently skips flat-format bundles,
+          # leaving invalid signatures that Gatekeeper rejects.
+          find Aether.app/Contents/Frameworks -maxdepth 1 -name "*.framework" | while read fw; do
+            codesign --force --options runtime --sign "$CERT" "$fw"
+          done
+
+          # ── Step 6: Sign the outer app bundle last ───────────────────────
+          codesign --force --options runtime \
+            --sign "$CERT" \
+            --entitlements "$ENTITLEMENTS" \
+            Aether.app
+
           codesign --verify --verbose Aether.app
           spctl --assess --verbose Aether.app 2>&1 || true
-          echo "✅ App signed with Developer ID by Xcode"
+          echo "✅ Signing complete"
 
           ditto -c -k --keepParent Aether.app ../../../../../macos_artifact/Aether.zip
           cd ../../../../../
