@@ -494,6 +494,77 @@ jobs:
             --dart-define-from-file=env/$ENV.json \
             --release
 
+      # ──────────────────────────────────────────────────────────────────────
+      # Symbol audit — gates all downstream steps (caching, signing, notarization).
+      # Catches the macOS 26 ld-prime dead-stripping regression where llama/ggml
+      # symbols are silently absent from the binary even though the build succeeds.
+      # Fails fast before wasting 5+ minutes on notarization of a broken binary.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Verify native symbols in macOS binary
+        run: |
+          APP=build/macos/Build/Products/Release/aether_flutter.app
+          BINARY="$APP/Contents/MacOS/aether_flutter"
+
+          echo "=== Native symbol audit ==="
+          echo "Binary: $BINARY"
+          echo "Size:   $(du -sh "$BINARY" | cut -f1)"
+
+          # Extract arm64 slice for nm (universal binaries need lipo first)
+          ARCH=$(lipo -archs "$BINARY" 2>/dev/null || echo "unknown")
+          echo "Archs:  $ARCH"
+
+          SLICE=/tmp/aether_macos_arm64_verify
+          if echo "$ARCH" | grep -q "arm64"; then
+            lipo -thin arm64 "$BINARY" -output "$SLICE" 2>/dev/null || cp "$BINARY" "$SLICE"
+          else
+            cp "$BINARY" "$SLICE"
+          fi
+
+          # Symbols to verify — archive origin in comment
+          REQUIRED_SYMBOLS=(
+            "llama_backend_init"        # libllama.a       — llama.cpp entrypoint
+            "llama_model_load"          # libllama.a       — different TU, proves full archive
+            "ggml_backend_init_best"    # libggml-cpu.a    — ggml backend selection
+            "ggml_graph_compute"        # libggml.a        — core compute path
+            "sd_ctx_init"              # libsd_all.a      — stable-diffusion entrypoint
+          )
+
+          MISSING=0
+          FOUND=0
+
+          printf "%-40s  %s\n" "Symbol" "Status"
+          printf "%-40s  %s\n" "------" "------"
+
+          for SYM in "${REQUIRED_SYMBOLS[@]}"; do
+            # Strip inline comment
+            NAME=$(echo "$SYM" | awk '{print $1}')
+            if nm "$SLICE" 2>/dev/null | grep -q " T _${NAME}"; then
+              ADDR=$(nm "$SLICE" 2>/dev/null | grep " T _${NAME}" | awk '{print $1}')
+              printf "✅  %-38s  0x%s\n" "$NAME" "$ADDR"
+              FOUND=$((FOUND + 1))
+            else
+              printf "❌  %-38s  NOT FOUND\n" "$NAME"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+
+          rm -f "$SLICE"
+
+          echo ""
+          echo "Result: $FOUND found, $MISSING missing"
+
+          if [ "$MISSING" -gt 0 ]; then
+            echo ""
+            echo "::error::$MISSING native symbol(s) missing from binary."
+            echo "::error::This indicates DEAD_CODE_STRIPPING stripped FFI symbols."
+            echo "::error::Fix: ensure DEAD_CODE_STRIPPING=NO in project.pbxproj and"
+            echo "::error::     libllama.a is NOT in LlamaNative.podspec vendored_libraries."
+            echo "::error::Run locally: nm build/macos/Build/Products/Release/aether_flutter.app/Contents/MacOS/aether_flutter | grep llama_backend_init"
+            exit 1
+          fi
+
+          echo "✅ All $FOUND symbols verified — binary is healthy, proceeding to packaging."
+
       - name: Save CocoaPods cache
         # Only write cache from main branch — prevents untrusted fork workflows
         # from poisoning the shared cache used by main branch builds.
