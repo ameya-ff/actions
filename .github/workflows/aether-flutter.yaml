@@ -526,7 +526,7 @@ jobs:
             "llama_model_load"          # libllama.a       — different TU, proves full archive
             "ggml_backend_init_best"    # libggml-cpu.a    — ggml backend selection
             "ggml_graph_compute"        # libggml.a        — core compute path
-            "sd_ctx_init"              # libsd_all.a      — stable-diffusion entrypoint
+            "sd_bridge_generate"        # libsd_bridge.a   — stable-diffusion C bridge
           )
 
           MISSING=0
