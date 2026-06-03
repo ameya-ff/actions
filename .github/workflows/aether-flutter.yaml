@@ -439,7 +439,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('macos/Podfile.lock', 'native/llama/LlamaNative.podspec', 'native/stable_diffusion/SdNative.podspec') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('macos/Podfile', 'macos/Podfile.lock', 'native/llama/LlamaNative.podspec', 'native/stable_diffusion/SdNative.podspec') }}
           restore-keys: ${{ runner.os }}-pods-
 
       - name: Restore Xcode DerivedData cache
@@ -447,7 +447,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: ${{ runner.os }}-xcode-${{ hashFiles('macos/Podfile.lock', '**/pubspec.lock') }}
+          key: ${{ runner.os }}-xcode-${{ hashFiles('macos/Podfile.lock', 'macos/Runner.xcodeproj/project.pbxproj', '**/pubspec.lock') }}
           restore-keys: ${{ runner.os }}-xcode-
 
       - name: Configure Xcode signing for CI
@@ -501,7 +501,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('macos/Podfile.lock', 'native/llama/LlamaNative.podspec', 'native/stable_diffusion/SdNative.podspec') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('macos/Podfile', 'macos/Podfile.lock', 'native/llama/LlamaNative.podspec', 'native/stable_diffusion/SdNative.podspec') }}
 
       - name: Save Xcode DerivedData cache
         # Only write cache from main branch — same poison-prevention rationale.
@@ -509,7 +509,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: ${{ steps.cache-derived.outputs.cache-primary-key }}
+          key: ${{ runner.os }}-xcode-${{ hashFiles('macos/Podfile.lock', 'macos/Runner.xcodeproj/project.pbxproj', '**/pubspec.lock') }}
 
       - name: Prepare macOS artifact
         run: |
