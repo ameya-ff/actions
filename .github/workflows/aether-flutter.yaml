@@ -392,14 +392,14 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: native/llama/build
-          key: ${{ runner.os }}-llama-${{ hashFiles('native/llama/CMakeLists.txt') }}
+          key: ${{ runner.os }}-llama-${{ hashFiles('native/llama/CMakeLists.txt', 'native/llama/build.sh') }}
 
       - name: Restore SdNative build artifacts
         id: cache-sd
         uses: actions/cache/restore@v4
         with:
           path: native/stable_diffusion/build
-          key: ${{ runner.os }}-sd-${{ hashFiles('native/stable_diffusion/CMakeLists.txt') }}
+          key: ${{ runner.os }}-sd-${{ hashFiles('native/stable_diffusion/CMakeLists.txt', 'native/stable_diffusion/build.sh') }}
 
       - name: Build LlamaNative static libs (llama.cpp)
         if: steps.cache-llama.outputs.cache-hit != 'true'
@@ -412,7 +412,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: native/llama/build
-          key: ${{ steps.cache-llama.outputs.cache-primary-key }}
+          key: ${{ runner.os }}-llama-${{ hashFiles('native/llama/CMakeLists.txt', 'native/llama/build.sh') }}
 
       - name: Build SdNative static libs (stable-diffusion.cpp)
         if: steps.cache-sd.outputs.cache-hit != 'true'
@@ -439,7 +439,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('macos/Podfile.lock') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('macos/Podfile.lock', 'native/llama/LlamaNative.podspec', 'native/stable_diffusion/SdNative.podspec') }}
           restore-keys: ${{ runner.os }}-pods-
 
       - name: Restore Xcode DerivedData cache
@@ -501,7 +501,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: macos/Pods
-          key: ${{ steps.cache-pods.outputs.cache-primary-key }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('macos/Podfile.lock', 'native/llama/LlamaNative.podspec', 'native/stable_diffusion/SdNative.podspec') }}
 
       - name: Save Xcode DerivedData cache
         # Only write cache from main branch — same poison-prevention rationale.
