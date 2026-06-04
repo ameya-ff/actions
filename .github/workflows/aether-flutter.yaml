@@ -582,6 +582,8 @@ jobs:
           key: ${{ runner.os }}-xcode-${{ hashFiles('macos/Podfile.lock', 'macos/Runner.xcodeproj/project.pbxproj', '**/pubspec.lock') }}
 
       - name: Prepare macOS artifact
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: |
           mkdir -p macos_artifact
           cd build/macos/Build/Products/Release
