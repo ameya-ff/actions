@@ -331,13 +331,12 @@ jobs:
       # macOS) which are stripped by ad-hoc signing.
       #
       # Secrets required:
-      #   MACOS_CERTIFICATE_BASE64       — base64 of farflung_devid_legacy.p12
-      #   MACOS_CERTIFICATE_PASSWORD     — p12 export password (farflung_ci_2031)
       # ──────────────────────────────────────────────────────────────────────
       - name: Import Developer ID Application certificate
         env:
           MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: |
           # Create a temporary ephemeral keychain (deleted after upload)
           KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
@@ -588,7 +587,7 @@ jobs:
           cd build/macos/Build/Products/Release
           mv aether_flutter.app Aether.app
 
-          CERT="Developer ID Application: Farflung, Inc. (JDXS7993X9)"
+          CERT="$MACOS_SIGNING_IDENTITY"
           ENTITLEMENTS="../../../../../macos/Runner/Release.entitlements"
           PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos.provisionprofile"
 
