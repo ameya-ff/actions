@@ -244,6 +244,18 @@ jobs:
             track: internal
             status: draft
 
+      - name: Tag commit
+        if: ${{ github.event.client_payload.env == 'dev' || github.event.inputs.env == 'dev' }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          OWNER: ${{ secrets.OWNER }}
+          REPO: ${{ secrets.REPO_AF }}
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag "${{ steps.set_build_name.outputs.build_name }}"
+          git push "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" "${{ steps.set_build_name.outputs.build_name }}"
+
   build-macos:
     name: Build Aether Flutter App (macOS)
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'macos' }}
@@ -268,7 +280,7 @@ jobs:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           if [[ "${ENV}" == "dev" ]]; then
-            BUILD_NAME="v$(date +'%Y-%m-%d::%H:%M')-$ENV"
+            BUILD_NAME="$(date +'%Y%m%d%H%M').0.0"
             echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
             echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
           else
@@ -701,6 +713,18 @@ jobs:
           max-retries: 5
           multipart-concurrent: true
           keep-file-fresh: true
+
+      - name: Tag commit
+        if: ${{ github.event.client_payload.env == 'dev' || github.event.inputs.env == 'dev' }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          OWNER: ${{ secrets.OWNER }}
+          REPO: ${{ secrets.REPO_AF }}
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag "${{ steps.set_build_name.outputs.build_name }}"
+          git push "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" "${{ steps.set_build_name.outputs.build_name }}"
 
       # Always clean up the ephemeral keychain — even on build failure —
       # to prevent the private key from persisting on the runner.
