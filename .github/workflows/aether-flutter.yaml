@@ -871,40 +871,41 @@ jobs:
           IOS_SIGNING_IDENTITY: ${{ secrets.AETHER_IOS_SIGNING_IDENTITY }}
           IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
         run: |
-          python3 -c "
-          import os
+          # Write patch script to a temp file to avoid YAML/shell quote-escaping issues
+          cat > /tmp/patch_pbxproj.py << 'PYEOF'
+          import re, os, sys
           path = 'ios/Runner.xcodeproj/project.pbxproj'
           signing_identity = os.environ['IOS_SIGNING_IDENTITY']
           profile_name = os.environ['IOS_PROVISION_PROFILE_NAME']
-          if os.path.exists(path):
-              with open(path, 'r') as f:
-                  content = f.read()
-              content = content.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
-              content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
-              # Set iOS signing identity
-              if '\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\"' in content:
-                  import re
-                  content = re.sub(
-                      r'\"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]\" = \"[^\"]*\";',
-                      f'\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"{signing_identity}\";',
-                      content
-                  )
-              else:
-                  content = content.replace(
-                      'CODE_SIGN_IDENTITY = \"Apple Distribution\";',
-                      f'CODE_SIGN_IDENTITY = \"{signing_identity}\";'
-                  )
-              # Set provisioning profile specifier
-              content = content.replace(
-                  'PROVISIONING_PROFILE_SPECIFIER = "";',
-                  f'PROVISIONING_PROFILE_SPECIFIER = \"{profile_name}\";'
+          if not os.path.exists(path):
+              print('ERROR: project.pbxproj not found at', path); sys.exit(1)
+          with open(path, 'r') as f:
+              content = f.read()
+          before = content.count('CODE_SIGN_STYLE = Automatic;')
+          content = content.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
+          content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
+          content = re.sub(
+              r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*";',
+              f'"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "{signing_identity}";',
+              content
+          )
+          if 'PROVISIONING_PROFILE_SPECIFIER' in content:
+              content = re.sub(
+                  r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*";',
+                  f'PROVISIONING_PROFILE_SPECIFIER = "{profile_name}";',
+                  content
               )
-              with open(path, 'w') as f:
-                  f.write(content)
-              print('Successfully updated Xcode iOS codesigning settings for CI')
-          else:
-              print('ios/Runner.xcodeproj/project.pbxproj not found')
-          "
+          after = content.count('CODE_SIGN_STYLE = Manual;')
+          print(f'CODE_SIGN_STYLE: replaced {before} Automatic -> {after} Manual')
+          with open(path, 'w') as f:
+              f.write(content)
+          print('pbxproj patched successfully')
+          PYEOF
+          python3 /tmp/patch_pbxproj.py
+
+          # Verify the patch landed
+          echo "--- CODE_SIGN_STYLE after patch ---"
+          grep "CODE_SIGN_STYLE" ios/Runner.xcodeproj/project.pbxproj
 
       - name: Write ExportOptions.plist
         env:
@@ -939,6 +940,11 @@ jobs:
       - name: Build IPA
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          # Belt-and-suspenders: these env vars are read by xcodebuild as build setting overrides
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: ${{ secrets.AETHER_IOS_SIGNING_IDENTITY }}
+          PROVISIONING_PROFILE_SPECIFIER: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
+          DEVELOPMENT_TEAM: JDXS7993X9
         run: |
           flutter build ipa \
             --release \
