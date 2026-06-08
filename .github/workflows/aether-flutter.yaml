@@ -36,6 +36,15 @@ on:
         - android
         - web
         - macos
+        - ios
+      ios-export-method:
+        description: 'iOS export method'
+        required: false
+        default: 'app-store'
+        type: choice
+        options:
+        - app-store
+        - ad-hoc
 
 # If another release happens while this workflow is still running,
 # cancel the earlier run in favor of the next run.
@@ -733,3 +742,249 @@ jobs:
         run: |
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           echo "Keychain deleted."
+
+  build-ios:
+    name: Build Aether Flutter App (iOS)
+    if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'ios' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'ios' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - shell: bash
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          OWNER: ${{ secrets.OWNER }}
+          REPO: ${{ secrets.REPO_AF }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
+
+      - id: set_build_name
+        shell: bash
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+        run: |
+          if [[ "${ENV}" == "dev" ]]; then
+            BUILD_NAME="$(date +'%Y%m%d%H%M').0.0"
+            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+            echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
+          else
+            BUILD_NAME="$BRANCH_OR_TAG"
+            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+            echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
+          fi
+          cd tmp
+          COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
+          if [[ -z "$COMMIT_MESSAGE" ]]; then
+            echo "No commit message found"
+          else
+            echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
+          fi
+
+      - id: set_version_code
+        shell: bash
+        run: |
+          VERSION_CODE=$(date +%s)
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Generated version code: $VERSION_CODE"
+
+      - run: rsync -a --remove-source-files tmp/ .
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          cache: true
+          channel: stable
+          flutter-version-file: pubspec.yaml
+
+      - name: Cache Flutter pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-cache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-cache-
+
+      - name: Cache Dart tool
+        uses: actions/cache@v4
+        with:
+          path: .dart_tool
+          key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock', 'lib/**/*.dart', 'packages/**/*.dart') }}
+          restore-keys: |
+            ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
+            ${{ runner.os }}-dart-tool-
+
+      - run: flutter pub get
+      - run: dart run build_runner build -d
+
+      # ──────────────────────────────────────────────────────────────────────
+      # iOS Distribution certificate + provisioning profile
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Import iOS Distribution certificate
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.AETHER_IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.AETHER_IOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          KEYCHAIN_PATH="$RUNNER_TEMP/ios-build.keychain"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$IOS_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/ios_cert.p12"
+
+          security import "$RUNNER_TEMP/ios_cert.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$IOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Apple Distribution"
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> $GITHUB_ENV
+          rm -f "$RUNNER_TEMP/ios_cert.p12"
+
+      - name: Install iOS provisioning profile
+        run: |
+          PP_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PP_DIR"
+          echo "${{ secrets.AETHER_IOS_PROVISION_PROFILE_BASE64 }}" | base64 --decode > "$PP_DIR/aether_ios.mobileprovision"
+          echo "Provisioning profile installed ✓"
+
+      - name: Patch Runner.entitlements — aps-environment to production
+        run: |
+          sed -i '' 's/<string>development<\/string>/<string>production<\/string>/g' ios/Runner/Runner.entitlements
+          echo "Patched aps-environment → production ✓"
+
+      - name: Configure Xcode signing for iOS CI
+        env:
+          IOS_SIGNING_IDENTITY: ${{ secrets.AETHER_IOS_SIGNING_IDENTITY }}
+          IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
+        run: |
+          python3 -c "
+          import os
+          path = 'ios/Runner.xcodeproj/project.pbxproj'
+          signing_identity = os.environ['IOS_SIGNING_IDENTITY']
+          profile_name = os.environ['IOS_PROVISION_PROFILE_NAME']
+          if os.path.exists(path):
+              with open(path, 'r') as f:
+                  content = f.read()
+              content = content.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
+              content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
+              # Set iOS signing identity
+              if '\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\"' in content:
+                  import re
+                  content = re.sub(
+                      r'\"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]\" = \"[^\"]*\";',
+                      f'\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"{signing_identity}\";',
+                      content
+                  )
+              else:
+                  content = content.replace(
+                      'CODE_SIGN_IDENTITY = \"Apple Distribution\";',
+                      f'CODE_SIGN_IDENTITY = \"{signing_identity}\";'
+                  )
+              # Set provisioning profile specifier
+              content = content.replace(
+                  'PROVISIONING_PROFILE_SPECIFIER = "";',
+                  f'PROVISIONING_PROFILE_SPECIFIER = \"{profile_name}\";'
+              )
+              with open(path, 'w') as f:
+                  f.write(content)
+              print('Successfully updated Xcode iOS codesigning settings for CI')
+          else:
+              print('ios/Runner.xcodeproj/project.pbxproj not found')
+          "
+
+      - name: Write ExportOptions.plist
+        env:
+          IOS_EXPORT_METHOD: ${{ github.event.client_payload.ios-export-method || github.event.inputs.ios-export-method || 'app-store' }}
+          IOS_SIGNING_IDENTITY: ${{ secrets.AETHER_IOS_SIGNING_IDENTITY }}
+          IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
+        run: |
+          cat > ios/ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>${IOS_EXPORT_METHOD}</string>
+            <key>teamID</key>
+            <string>JDXS7993X9</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>signingCertificate</key>
+            <string>${IOS_SIGNING_IDENTITY}</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>ai.farflung.aether</key>
+              <string>${IOS_PROVISION_PROFILE_NAME}</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+          echo "ExportOptions.plist written ✓"
+          cat ios/ExportOptions.plist
+
+      - name: Build IPA
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+        run: |
+          flutter build ipa \
+            --release \
+            --export-options-plist=ios/ExportOptions.plist \
+            --dart-define-from-file=env/$ENV.json \
+            --build-name ${{ steps.set_build_name.outputs.build_name }} \
+            --build-number ${{ steps.set_version_code.outputs.version_code }} \
+            --no-pub
+
+      - uses: ryand56/r2-upload-action@latest
+        name: Upload IPA to R2
+        with:
+          r2-account-id: ${{ secrets.CF_ACCOUNT_ID }}
+          r2-access-key-id: ${{ secrets.CF_R2_ACCESS_KEY }}
+          r2-secret-access-key: ${{ secrets.CF_R2_SECRET_KEY }}
+          r2-bucket: ${{ secrets.CF_R2_BUCKET }}
+          source-dir: build/ios/ipa
+          destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}/ios
+          output-file-url: false
+          multipart-size: 100
+          max-retries: 5
+          multipart-concurrent: true
+          keep-file-fresh: true
+
+      - name: Upload to TestFlight
+        run: |
+          # Write App Store Connect API key to the standard location
+          mkdir -p ~/private_keys
+          echo "${{ secrets.AETHER_APP_STORE_CONNECT_API_KEY_BASE64 }}" | base64 --decode > ~/private_keys/AuthKey_${{ secrets.AETHER_APP_STORE_CONNECT_KEY_ID }}.p8
+
+          xcrun altool --upload-app \
+            -f build/ios/ipa/*.ipa \
+            -t ios \
+            --apiKey ${{ secrets.AETHER_APP_STORE_CONNECT_KEY_ID }} \
+            --apiIssuer ${{ secrets.AETHER_APP_STORE_CONNECT_ISSUER_ID }} \
+            --verbose
+
+      # Always clean up — even on build failure
+      - name: Cleanup ephemeral keychain
+        if: always()
+        run: |
+          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          echo "Keychain deleted."
+
+      - name: Cleanup private_keys
+        if: always()
+        run: |
+          rm -f ~/private_keys/AuthKey_${{ secrets.AETHER_APP_STORE_CONNECT_KEY_ID }}.p8
+          echo "API key deleted."
