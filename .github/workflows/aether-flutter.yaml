@@ -793,6 +793,18 @@ jobs:
 
       - run: rsync -a --remove-source-files tmp/ .
 
+
+      - name: Select latest Xcode (prefer Xcode 26+ for iOS 26 SDK)
+        run: |
+          echo "=== Installed Xcode versions ==="
+          ls /Applications/ | grep -E '^Xcode' || echo "(none)"
+          LATEST=$(ls /Applications/ | grep -E '^Xcode[_. ]?[0-9]' | sort -V | tail -1 || true)
+          if [ -n "$LATEST" ]; then
+            sudo xcode-select -s "/Applications/$LATEST/Contents/Developer"
+            echo "Selected: /Applications/$LATEST"
+          fi
+          echo "Active Xcode: $(xcodebuild -version)"
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
