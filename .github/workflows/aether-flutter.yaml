@@ -866,62 +866,20 @@ jobs:
           sed -i '' 's/<string>development<\/string>/<string>production<\/string>/g' ios/Runner/Runner.entitlements
           echo "Patched aps-environment → production ✓"
 
-      - name: Configure Xcode signing for iOS CI
-        env:
-          IOS_SIGNING_IDENTITY: ${{ secrets.AETHER_IOS_SIGNING_IDENTITY }}
-          IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
-        run: |
-          # Write patch script to a temp file to avoid YAML/shell quote-escaping issues
-          cat > /tmp/patch_pbxproj.py << 'PYEOF'
-          import re, os, sys
-          path = 'ios/Runner.xcodeproj/project.pbxproj'
-          signing_identity = os.environ['IOS_SIGNING_IDENTITY']
-          profile_name = os.environ['IOS_PROVISION_PROFILE_NAME']
-          if not os.path.exists(path):
-              print('ERROR: project.pbxproj not found at', path); sys.exit(1)
-          with open(path, 'r') as f:
-              content = f.read()
-          before = content.count('CODE_SIGN_STYLE = Automatic;')
-          content = content.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
-          content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
-          content = re.sub(
-              r'"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "[^"]*";',
-              f'"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "{signing_identity}";',
-              content
-          )
-          # Insert PROVISIONING_PROFILE_SPECIFIER after each CODE_SIGN_STYLE = Manual;
-          # (the original pbxproj has no PROVISIONING_PROFILE_SPECIFIER at all)
-          if 'PROVISIONING_PROFILE_SPECIFIER' in content:
-              content = re.sub(
-                  r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*";',
-                  f'PROVISIONING_PROFILE_SPECIFIER = "{profile_name}";',
-                  content
-              )
-          else:
-              content = re.sub(
-                  r'(CODE_SIGN_STYLE = Manual;)',
-                  f'\\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "{profile_name}";',
-                  content
-              )
-          pp = content.count(f'PROVISIONING_PROFILE_SPECIFIER = "{profile_name}";')
-          after = content.count('CODE_SIGN_STYLE = Manual;')
-          print(f'CODE_SIGN_STYLE: replaced {before} Automatic -> {after} Manual')
-          print(f'PROVISIONING_PROFILE_SPECIFIER: {pp} entries')
-          with open(path, 'w') as f:
-              f.write(content)
-          print('pbxproj patched successfully')
-          PYEOF
-          python3 /tmp/patch_pbxproj.py
 
-          # Verify both keys landed
-          echo "--- Signing settings after patch ---"
-          grep -E "CODE_SIGN_STYLE|PROVISIONING_PROFILE_SPECIFIER" ios/Runner.xcodeproj/project.pbxproj
+
+      - name: Write App Store Connect API Key
+        env:
+          ASC_API_KEY_BASE64: ${{ secrets.AETHER_APP_STORE_CONNECT_API_KEY_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.AETHER_APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$ASC_API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          echo "API key written ✓"
 
       - name: Write ExportOptions.plist
         env:
           IOS_EXPORT_METHOD: ${{ github.event.client_payload.ios-export-method || github.event.inputs.ios-export-method || 'app-store' }}
-          IOS_SIGNING_IDENTITY: ${{ secrets.AETHER_IOS_SIGNING_IDENTITY }}
-          IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
         run: |
           cat > ios/ExportOptions.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -933,14 +891,7 @@ jobs:
             <key>teamID</key>
             <string>JDXS7993X9</string>
             <key>signingStyle</key>
-            <string>manual</string>
-            <key>signingCertificate</key>
-            <string>${IOS_SIGNING_IDENTITY}</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>ai.farflung.aether</key>
-              <string>${IOS_PROVISION_PROFILE_NAME}</string>
-            </dict>
+            <string>automatic</string>
           </dict>
           </plist>
           EOF
@@ -949,13 +900,13 @@ jobs:
       - name: Build IPA
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          IOS_SIGNING_IDENTITY: ${{ secrets.AETHER_IOS_SIGNING_IDENTITY }}
-          IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
+          ASC_KEY_ID: ${{ secrets.AETHER_APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.AETHER_APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           # 1. CocoaPods install
           cd ios && pod install && cd ..
 
-          # 2. Write dart-defines encoder to file (avoids inline python3 -c multiline quoting)
+          # 2. Write dart-defines encoder to file
           cat > /tmp/encode_defines.py << 'PYEOF'
           import json, base64, os
           env = os.environ['ENV']
@@ -967,7 +918,8 @@ jobs:
           DART_DEFINES=$(python3 /tmp/encode_defines.py)
           echo "Dart defines encoded OK"
 
-          # 3. Archive — CODE_SIGN_STYLE=Manual as CLI arg = highest priority, overrides everything
+          # 3. Archive — automatic signing via App Store Connect API key
+          #    (-allowProvisioningUpdates downloads/updates profiles as needed)
           xcodebuild \
             -workspace ios/Runner.xcworkspace \
             -scheme Runner \
@@ -975,9 +927,13 @@ jobs:
             -configuration Release \
             -archivePath /tmp/aether.xcarchive \
             archive \
-            CODE_SIGN_STYLE=Manual \
-            "CODE_SIGN_IDENTITY=${IOS_SIGNING_IDENTITY}" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "${ASC_KEY_ID}" \
+            -authenticationKeyIssuerID "${ASC_ISSUER_ID}" \
+            CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM=JDXS7993X9 \
+            "CODE_SIGN_IDENTITY=Apple Distribution" \
             "OTHER_CODE_SIGN_FLAGS=--keychain ${KEYCHAIN_PATH}" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             "FLUTTER_BUILD_NAME=${{ steps.set_build_name.outputs.build_name }}" \
@@ -990,7 +946,11 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath /tmp/aether.xcarchive \
             -exportOptionsPlist ios/ExportOptions.plist \
-            -exportPath build/ios/ipa
+            -exportPath build/ios/ipa \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "${ASC_KEY_ID}" \
+            -authenticationKeyIssuerID "${ASC_ISSUER_ID}"
 
           echo "IPA: done"
 
