@@ -977,7 +977,6 @@ jobs:
             archive \
             CODE_SIGN_STYLE=Manual \
             "CODE_SIGN_IDENTITY=${IOS_SIGNING_IDENTITY}" \
-            "PROVISIONING_PROFILE_SPECIFIER=${IOS_PROVISION_PROFILE_NAME}" \
             DEVELOPMENT_TEAM=JDXS7993X9 \
             "OTHER_CODE_SIGN_FLAGS=--keychain ${KEYCHAIN_PATH}" \
             COMPILER_INDEX_STORE_ENABLE=NO \
