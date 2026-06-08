@@ -933,7 +933,6 @@ jobs:
             -authenticationKeyIssuerID "${ASC_ISSUER_ID}" \
             CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM=JDXS7993X9 \
-            "CODE_SIGN_IDENTITY=Apple Distribution" \
             "OTHER_CODE_SIGN_FLAGS=--keychain ${KEYCHAIN_PATH}" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             "FLUTTER_BUILD_NAME=${{ steps.set_build_name.outputs.build_name }}" \
