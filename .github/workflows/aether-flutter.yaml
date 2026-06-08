@@ -949,19 +949,50 @@ jobs:
       - name: Build IPA
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          # Belt-and-suspenders: these env vars are read by xcodebuild as build setting overrides
-          CODE_SIGN_STYLE: Manual
-          CODE_SIGN_IDENTITY: ${{ secrets.AETHER_IOS_SIGNING_IDENTITY }}
-          PROVISIONING_PROFILE_SPECIFIER: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
-          DEVELOPMENT_TEAM: JDXS7993X9
+          IOS_SIGNING_IDENTITY: ${{ secrets.AETHER_IOS_SIGNING_IDENTITY }}
+          IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
         run: |
-          flutter build ipa \
-            --release \
-            --export-options-plist=ios/ExportOptions.plist \
-            --dart-define-from-file=env/$ENV.json \
-            --build-name ${{ steps.set_build_name.outputs.build_name }} \
-            --build-number ${{ steps.set_version_code.outputs.version_code }} \
-            --no-pub
+          # 1. CocoaPods install
+          cd ios && pod install && cd ..
+
+          # 2. Encode dart defines: Flutter format = base64(key=value), comma-separated
+          DART_DEFINES=$(python3 -c "
+import json, base64, os
+env = os.environ['ENV']
+with open(f'env/{env}.json') as f:
+    d = json.load(f)
+defines = [base64.b64encode(f'{k}={v}'.encode()).decode() for k, v in d.items()]
+print(','.join(defines))
+")
+          echo "Encoded dart defines: ${#DART_DEFINES} bytes"
+
+          # 3. Archive — CODE_SIGN_STYLE=Manual as CLI arg = highest priority, overrides everything
+          xcodebuild \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath /tmp/aether.xcarchive \
+            archive \
+            CODE_SIGN_STYLE=Manual \
+            "CODE_SIGN_IDENTITY=${IOS_SIGNING_IDENTITY}" \
+            "PROVISIONING_PROFILE_SPECIFIER=${IOS_PROVISION_PROFILE_NAME}" \
+            DEVELOPMENT_TEAM=JDXS7993X9 \
+            "OTHER_CODE_SIGN_FLAGS=--keychain ${KEYCHAIN_PATH}" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            "FLUTTER_BUILD_NAME=${{ steps.set_build_name.outputs.build_name }}" \
+            "FLUTTER_BUILD_NUMBER=${{ steps.set_version_code.outputs.version_code }}" \
+            "DART_DEFINES=${DART_DEFINES}" \
+            FLUTTER_BUILD_MODE=release
+
+          # 4. Export IPA
+          mkdir -p build/ios/ipa
+          xcodebuild -exportArchive \
+            -archivePath /tmp/aether.xcarchive \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -exportPath build/ios/ipa
+
+          echo "IPA: $(ls build/ios/ipa/*.ipa 2>/dev/null || echo 'NOT FOUND')"
 
       - uses: ryand56/r2-upload-action@latest
         name: Upload IPA to R2
