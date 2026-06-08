@@ -955,16 +955,17 @@ jobs:
           # 1. CocoaPods install
           cd ios && pod install && cd ..
 
-          # 2. Encode dart defines: Flutter format = base64(key=value), comma-separated
-          DART_DEFINES=$(python3 -c "
-import json, base64, os
-env = os.environ['ENV']
-with open(f'env/{env}.json') as f:
-    d = json.load(f)
-defines = [base64.b64encode(f'{k}={v}'.encode()).decode() for k, v in d.items()]
-print(','.join(defines))
-")
-          echo "Encoded dart defines: ${#DART_DEFINES} bytes"
+          # 2. Write dart-defines encoder to file (avoids inline python3 -c multiline quoting)
+          cat > /tmp/encode_defines.py << 'PYEOF'
+          import json, base64, os
+          env = os.environ['ENV']
+          with open('env/' + env + '.json') as f:
+              d = json.load(f)
+          defines = [base64.b64encode((str(k) + '=' + str(v)).encode()).decode() for k, v in d.items()]
+          print(','.join(defines))
+          PYEOF
+          DART_DEFINES=$(python3 /tmp/encode_defines.py)
+          echo "Dart defines encoded OK"
 
           # 3. Archive — CODE_SIGN_STYLE=Manual as CLI arg = highest priority, overrides everything
           xcodebuild \
@@ -992,7 +993,7 @@ print(','.join(defines))
             -exportOptionsPlist ios/ExportOptions.plist \
             -exportPath build/ios/ipa
 
-          echo "IPA: $(ls build/ios/ipa/*.ipa 2>/dev/null || echo 'NOT FOUND')"
+          echo "IPA: done"
 
       - uses: ryand56/r2-upload-action@latest
         name: Upload IPA to R2
