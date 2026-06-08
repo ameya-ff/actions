@@ -889,23 +889,33 @@ jobs:
               f'"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "{signing_identity}";',
               content
           )
+          # Insert PROVISIONING_PROFILE_SPECIFIER after each CODE_SIGN_STYLE = Manual;
+          # (the original pbxproj has no PROVISIONING_PROFILE_SPECIFIER at all)
           if 'PROVISIONING_PROFILE_SPECIFIER' in content:
               content = re.sub(
                   r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*";',
                   f'PROVISIONING_PROFILE_SPECIFIER = "{profile_name}";',
                   content
               )
+          else:
+              content = re.sub(
+                  r'(CODE_SIGN_STYLE = Manual;)',
+                  f'\\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "{profile_name}";',
+                  content
+              )
+          pp = content.count(f'PROVISIONING_PROFILE_SPECIFIER = "{profile_name}";')
           after = content.count('CODE_SIGN_STYLE = Manual;')
           print(f'CODE_SIGN_STYLE: replaced {before} Automatic -> {after} Manual')
+          print(f'PROVISIONING_PROFILE_SPECIFIER: {pp} entries')
           with open(path, 'w') as f:
               f.write(content)
           print('pbxproj patched successfully')
           PYEOF
           python3 /tmp/patch_pbxproj.py
 
-          # Verify the patch landed
-          echo "--- CODE_SIGN_STYLE after patch ---"
-          grep "CODE_SIGN_STYLE" ios/Runner.xcodeproj/project.pbxproj
+          # Verify both keys landed
+          echo "--- Signing settings after patch ---"
+          grep -E "CODE_SIGN_STYLE|PROVISIONING_PROFILE_SPECIFIER" ios/Runner.xcodeproj/project.pbxproj
 
       - name: Write ExportOptions.plist
         env:
