@@ -940,7 +940,7 @@ jobs:
 
           # 3. Archive — automatic signing via App Store Connect API key
           #    (-allowProvisioningUpdates downloads/updates profiles as needed)
-          xcodebuild \
+          xcodebuild -quiet \
             -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -sdk iphoneos \
@@ -962,7 +962,7 @@ jobs:
 
           # 4. Export IPA
           mkdir -p build/ios/ipa
-          xcodebuild -exportArchive \
+          xcodebuild -quiet -exportArchive \
             -archivePath /tmp/aether.xcarchive \
             -exportOptionsPlist ios/ExportOptions.plist \
             -exportPath build/ios/ipa
