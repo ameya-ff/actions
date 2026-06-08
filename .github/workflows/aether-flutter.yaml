@@ -996,8 +996,7 @@ jobs:
             -f build/ios/ipa/*.ipa \
             -t ios \
             --apiKey ${{ secrets.AETHER_APP_STORE_CONNECT_KEY_ID }} \
-            --apiIssuer ${{ secrets.AETHER_APP_STORE_CONNECT_ISSUER_ID }} \
-            --verbose
+            --apiIssuer ${{ secrets.AETHER_APP_STORE_CONNECT_ISSUER_ID }}
 
       # Always clean up — even on build failure
       - name: Cleanup ephemeral keychain
