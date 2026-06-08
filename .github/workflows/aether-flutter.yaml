@@ -985,10 +985,8 @@ jobs:
           keep-file-fresh: true
 
       - name: Upload to TestFlight
-        continue-on-error: true  # Apple requires iOS 26 SDK; runner has iOS 18.x — will work once GitHub updates to Xcode 26
         run: |
           echo "Xcode version: $(xcodebuild -version | head -1)"
-          echo "Note: Apple requires iOS 26 SDK for TestFlight. If this fails, download IPA from R2."
 
           # Write App Store Connect API key to the standard location
           mkdir -p ~/private_keys
@@ -999,7 +997,7 @@ jobs:
             -t ios \
             --apiKey ${{ secrets.AETHER_APP_STORE_CONNECT_KEY_ID }} \
             --apiIssuer ${{ secrets.AETHER_APP_STORE_CONNECT_ISSUER_ID }} \
-            --verbose || echo "⚠️ TestFlight upload failed (SDK version). IPA is available on R2."
+            --verbose
 
       # Always clean up — even on build failure
       - name: Cleanup ephemeral keychain
