@@ -922,6 +922,7 @@ jobs:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           ASC_KEY_ID: ${{ secrets.AETHER_APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.AETHER_APP_STORE_CONNECT_ISSUER_ID }}
+          IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
         run: |
           # 1. CocoaPods install
           cd ios && pod install && cd ..
@@ -938,8 +939,12 @@ jobs:
           DART_DEFINES=$(python3 /tmp/encode_defines.py)
           echo "Dart defines encoded OK"
 
-          # 3. Archive — automatic signing via App Store Connect API key
-          #    (-allowProvisioningUpdates downloads/updates profiles as needed)
+          # 3. Archive — manual signing using the cert+profile imported above.
+          # CODE_SIGN_STYLE=Manual prevents Xcode from calling the ASC API to
+          # create a new Development certificate on every run (which exhausts
+          # the Apple Developer account's 10-cert limit after ~10 CI runs).
+          # The Distribution cert was already imported into the ephemeral keychain
+          # in the "Import iOS Distribution certificate" step above.
           xcodebuild -quiet \
             -workspace ios/Runner.xcworkspace \
             -scheme Runner \
@@ -947,11 +952,9 @@ jobs:
             -configuration Release \
             -archivePath /tmp/aether.xcarchive \
             archive \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
-            -authenticationKeyID "${ASC_KEY_ID}" \
-            -authenticationKeyIssuerID "${ASC_ISSUER_ID}" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="${IOS_PROVISION_PROFILE_NAME}" \
             DEVELOPMENT_TEAM=JDXS7993X9 \
             "OTHER_CODE_SIGN_FLAGS=--keychain ${KEYCHAIN_PATH}" \
             COMPILER_INDEX_STORE_ENABLE=NO \
