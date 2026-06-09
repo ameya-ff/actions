@@ -868,10 +868,16 @@ jobs:
 
       - name: Install iOS provisioning profile
         run: |
-          PP_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
-          mkdir -p "$PP_DIR"
-          echo "${{ secrets.AETHER_IOS_PROVISION_PROFILE_BASE64 }}" | base64 --decode > "$PP_DIR/aether_ios.mobileprovision"
-          echo "Provisioning profile installed ✓"
+          # Write to both locations — Xcode ≤15 uses MobileDevice/, Xcode 16+ uses
+          # Developer/Xcode/UserData/. Writing both ensures compatibility regardless
+          # of which Xcode version the runner selects.
+          PP_PATH="$RUNNER_TEMP/aether_ios.mobileprovision"
+          echo "${{ secrets.AETHER_IOS_PROVISION_PROFILE_BASE64 }}" | base64 --decode > "$PP_PATH"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          cp "$PP_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          cp "$PP_PATH" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"
+          echo "Provisioning profile installed ✓ (both Xcode 15 + 16 locations)"
 
       - name: Patch Runner.entitlements — aps-environment to production
         run: |
@@ -920,14 +926,9 @@ jobs:
       - name: Build IPA
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          ASC_KEY_ID: ${{ secrets.AETHER_APP_STORE_CONNECT_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.AETHER_APP_STORE_CONNECT_ISSUER_ID }}
           IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
         run: |
-          # 1. CocoaPods install
-          cd ios && pod install && cd ..
-
-          # 2. Write dart-defines encoder to file
+          # Encode dart-defines from env JSON
           cat > /tmp/encode_defines.py << 'PYEOF'
           import json, base64, os
           env = os.environ['ENV']
@@ -939,41 +940,19 @@ jobs:
           DART_DEFINES=$(python3 /tmp/encode_defines.py)
           echo "Dart defines encoded OK"
 
-          # 3. Archive — manual signing using the cert+profile imported above.
-          # CODE_SIGN_STYLE=Manual prevents Xcode from calling the ASC API to
-          # create a new Development certificate on every run (which exhausts
-          # the Apple Developer account's 10-cert limit after ~10 CI runs).
-          # The Distribution cert was already imported into the ephemeral keychain
-          # in the "Import iOS Distribution certificate" step above.
-          #
-          # PROVISIONING_PROFILE_SPECIFIER is scoped to Runner target only via
-          # the Runner[sdk=iphoneos*] syntax. Without scoping, xcodebuild
-          # broadcasts it to all CocoaPods targets (which don't support profiles),
-          # causing dozens of "does not support provisioning profiles" errors.
-          xcodebuild -quiet \
-            -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -sdk iphoneos \
-            -configuration Release \
-            -archivePath /tmp/aether.xcarchive \
-            archive \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]=${IOS_PROVISION_PROFILE_NAME}" \
-            DEVELOPMENT_TEAM=JDXS7993X9 \
-            "OTHER_CODE_SIGN_FLAGS=--keychain ${KEYCHAIN_PATH}" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            "FLUTTER_BUILD_NAME=${{ steps.set_build_name.outputs.build_name }}" \
-            "FLUTTER_BUILD_NUMBER=${{ steps.set_version_code.outputs.version_code }}" \
-            "DART_DEFINES=${DART_DEFINES}" \
-            FLUTTER_BUILD_MODE=release
-
-          # 4. Export IPA
-          mkdir -p build/ios/ipa
-          xcodebuild -quiet -exportArchive \
-            -archivePath /tmp/aether.xcarchive \
-            -exportOptionsPlist ios/ExportOptions.plist \
-            -exportPath build/ios/ipa
+          # Use flutter build ipa instead of raw xcodebuild archive.
+          # Flutter's tooling handles CocoaPods integration and signing correctly:
+          # - Runs pod install internally
+          # - Passes CODE_SIGN_STYLE=Manual only to the Runner target (not Pods)
+          # - Uses ExportOptions.plist for the export step
+          # The Podfile post_install hook sets CODE_SIGNING_ALLOWED=NO for all
+          # Pod targets, preventing profile inheritance errors.
+          flutter build ipa \
+            --release \
+            --export-options-plist=ios/ExportOptions.plist \
+            --build-name="${{ steps.set_build_name.outputs.build_name }}" \
+            --build-number="${{ steps.set_version_code.outputs.version_code }}" \
+            --dart-define-from-file="env/${ENV}.json"
 
           echo "IPA: done"
 
