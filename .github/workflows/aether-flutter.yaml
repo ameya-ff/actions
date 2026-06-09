@@ -792,39 +792,87 @@ jobs:
 
       - name: Build macOS PKG for TestFlight
         env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          MACOS_APP_STORE_SIGNING_IDENTITY: ${{ secrets.MACOS_APP_STORE_SIGNING_IDENTITY || 'Apple Distribution: Ameya Naik (JDXS7993X9)' }}
         run: |
-          # Write dart-defines encoder
-          cat > /tmp/encode_defines.py << 'PYEOF'
-          import json, base64, os
-          env = os.environ['ENV']
-          with open('env/' + env + '.json') as f:
-              d = json.load(f)
-          defines = [base64.b64encode((str(k) + '=' + str(v)).encode()).decode() for k, v in d.items()]
-          print(','.join(defines))
-          PYEOF
-          DART_DEFINES=$(python3 /tmp/encode_defines.py)
+          ARCHIVE=/tmp/aether-macos.xcarchive
+          APP_SRC=build/macos/Build/Products/Release/Aether.app
+          APP_DST="$ARCHIVE/Products/Applications/Aether.app"
 
-          # Archive
-          xcodebuild -quiet \
-            -workspace macos/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -archivePath /tmp/aether-macos.xcarchive \
-            archive \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM=JDXS7993X9 \
-            "OTHER_CODE_SIGN_FLAGS=--keychain ${KEYCHAIN_PATH}" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            "FLUTTER_BUILD_NAME=${{ steps.set_build_name.outputs.build_name }}" \
-            "FLUTTER_BUILD_NUMBER=${{ steps.set_version_code.outputs.version_code }}" \
-            "DART_DEFINES=${DART_DEFINES}" \
-            "PROVISIONING_PROFILE_SPECIFIER=${{ secrets.AETHER_MACOS_APP_STORE_PROVISION_PROFILE_NAME || 'Aether macOS App Store' }}"
+          # ── 1. Copy the already-built .app into an xcarchive structure ────
+          mkdir -p "$ARCHIVE/Products/Applications"
+          cp -R "$APP_SRC" "$APP_DST"
 
-          # Export PKG
+          # ── 2. Embed the App Store provisioning profile ──────────────────
+          PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos_appstore.provisionprofile"
+          cp "$PP" "$APP_DST/Contents/embedded.provisionprofile"
+
+          # ── 3. Re-sign with App Store Distribution cert ──────────────────
+          # (The app was signed with Developer ID in the prepare step;
+          #  TestFlight requires App Store Distribution identity.)
+          CERT="$MACOS_APP_STORE_SIGNING_IDENTITY"
+          ENTITLEMENTS="macos/Runner/Release.entitlements"
+
+          # Sign dylibs
+          find "$APP_DST" -name "*.dylib" | while read lib; do
+            codesign --force --options runtime --sign "$CERT" \
+              --keychain "$KEYCHAIN_PATH" "$lib"
+          done
+
+          # Sign frameworks
+          find "$APP_DST/Contents/Frameworks" -maxdepth 1 -name "*.framework" | while read fw; do
+            codesign --force --options runtime --sign "$CERT" \
+              --keychain "$KEYCHAIN_PATH" "$fw"
+          done
+
+          # Sign the app bundle
+          codesign --force --options runtime \
+            --sign "$CERT" \
+            --keychain "$KEYCHAIN_PATH" \
+            --entitlements "$ENTITLEMENTS" \
+            "$APP_DST"
+
+          codesign --verify --verbose "$APP_DST"
+          echo "✅ App re-signed with App Store Distribution cert"
+
+          # ── 4. Write archive Info.plist ───────────────────────────────────
+          BUILD_NAME="${{ steps.set_build_name.outputs.build_name }}"
+          BUILD_NUMBER="${{ steps.set_version_code.outputs.version_code }}"
+          cat > "$ARCHIVE/Info.plist" << IPEOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>ApplicationProperties</key>
+            <dict>
+              <key>ApplicationPath</key>
+              <string>Applications/Aether.app</string>
+              <key>CFBundleIdentifier</key>
+              <string>ai.farflung.aether</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${BUILD_NAME}</string>
+              <key>CFBundleVersion</key>
+              <string>${BUILD_NUMBER}</string>
+              <key>SigningIdentity</key>
+              <string>${CERT}</string>
+              <key>Team</key>
+              <string>JDXS7993X9</string>
+            </dict>
+            <key>ArchiveVersion</key>
+            <integer>2</integer>
+            <key>CreationDate</key>
+            <date>$(date -u +%Y-%m-%dT%H:%M:%SZ)</date>
+            <key>Name</key>
+            <string>Aether</string>
+            <key>SchemeName</key>
+            <string>Runner</string>
+          </dict>
+          </plist>
+          IPEOF
+
+          # ── 5. Export PKG ─────────────────────────────────────────────────
           mkdir -p build/macos/pkg
           xcodebuild -quiet -exportArchive \
-            -archivePath /tmp/aether-macos.xcarchive \
+            -archivePath "$ARCHIVE" \
             -exportOptionsPlist macos/ExportOptions.plist \
             -exportPath build/macos/pkg
 
