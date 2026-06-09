@@ -763,118 +763,32 @@ jobs:
           echo "${{ secrets.AETHER_MACOS_APP_STORE_PROVISION_PROFILE_BASE64 }}" | base64 --decode > "$PP_DIR/aether_macos_appstore.provisionprofile"
           echo "Mac App Store Provisioning profile installed ✓"
 
-      - name: Write Mac App Store ExportOptions.plist
-        env:
-          MACOS_APP_STORE_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_MACOS_APP_STORE_PROVISION_PROFILE_NAME || 'Aether macOS App Store' }}
-        run: |
-          cat > macos/ExportOptions.plist << 'PLISTEOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>app-store</string>
-            <key>teamID</key>
-            <string>JDXS7993X9</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>signingCertificate</key>
-            <string>Apple Distribution</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>ai.farflung.aether</key>
-              <string>${MACOS_APP_STORE_PROVISION_PROFILE_NAME}</string>
-            </dict>
-          </dict>
-          </plist>
-          PLISTEOF
-          echo "ExportOptions.plist written ✓"
 
       - name: Build macOS PKG for TestFlight
         env:
-          MACOS_APP_STORE_SIGNING_IDENTITY: ${{ secrets.MACOS_APP_STORE_SIGNING_IDENTITY || 'Apple Distribution: Ameya Naik (JDXS7993X9)' }}
+          MACOS_APP_STORE_SIGNING_IDENTITY: ${{ secrets.MACOS_APP_STORE_SIGNING_IDENTITY }}
         run: |
-          ARCHIVE=/tmp/aether-macos.xcarchive
-          APP_SRC=build/macos/Build/Products/Release/Aether.app
-          APP_DST="$ARCHIVE/Products/Applications/Aether.app"
-
-          # ── 1. Copy the already-built .app into an xcarchive structure ────
-          mkdir -p "$ARCHIVE/Products/Applications"
-          cp -R "$APP_SRC" "$APP_DST"
-
-          # ── 2. Embed the App Store provisioning profile ──────────────────
+          APP=build/macos/Build/Products/Release/Aether.app
           PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos_appstore.provisionprofile"
-          cp "$PP" "$APP_DST/Contents/embedded.provisionprofile"
 
-          # ── 3. Re-sign with App Store Distribution cert ──────────────────
-          # (The app was signed with Developer ID in the prepare step;
-          #  TestFlight requires App Store Distribution identity.)
-          CERT="$MACOS_APP_STORE_SIGNING_IDENTITY"
-          ENTITLEMENTS="macos/Runner/Release.entitlements"
+          # Embed App Store provisioning profile (replaces Developer ID one)
+          cp "$PP" "$APP/Contents/embedded.provisionprofile"
 
-          # Sign dylibs
-          find "$APP_DST" -name "*.dylib" | while read lib; do
-            codesign --force --options runtime --sign "$CERT" \
-              --keychain "$KEYCHAIN_PATH" "$lib"
-          done
-
-          # Sign frameworks
-          find "$APP_DST/Contents/Frameworks" -maxdepth 1 -name "*.framework" | while read fw; do
-            codesign --force --options runtime --sign "$CERT" \
-              --keychain "$KEYCHAIN_PATH" "$fw"
-          done
-
-          # Sign the app bundle
-          codesign --force --options runtime \
-            --sign "$CERT" \
+          # Re-sign with App Store Distribution cert
+          # (app was signed with Developer ID for R2/DMG; TestFlight needs App Store cert)
+          codesign --force --deep --options runtime \
+            --sign "$MACOS_APP_STORE_SIGNING_IDENTITY" \
             --keychain "$KEYCHAIN_PATH" \
-            --entitlements "$ENTITLEMENTS" \
-            "$APP_DST"
+            --entitlements macos/Runner/Release.entitlements \
+            "$APP"
+          codesign --verify --verbose "$APP"
+          echo "✅ Re-signed with App Store Distribution cert"
 
-          codesign --verify --verbose "$APP_DST"
-          echo "✅ App re-signed with App Store Distribution cert"
-
-          # ── 4. Write archive Info.plist ───────────────────────────────────
-          BUILD_NAME="${{ steps.set_build_name.outputs.build_name }}"
-          BUILD_NUMBER="${{ steps.set_version_code.outputs.version_code }}"
-          cat > "$ARCHIVE/Info.plist" << IPEOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>ApplicationProperties</key>
-            <dict>
-              <key>ApplicationPath</key>
-              <string>Applications/Aether.app</string>
-              <key>CFBundleIdentifier</key>
-              <string>ai.farflung.aether</string>
-              <key>CFBundleShortVersionString</key>
-              <string>${BUILD_NAME}</string>
-              <key>CFBundleVersion</key>
-              <string>${BUILD_NUMBER}</string>
-              <key>SigningIdentity</key>
-              <string>${CERT}</string>
-              <key>Team</key>
-              <string>JDXS7993X9</string>
-            </dict>
-            <key>ArchiveVersion</key>
-            <integer>2</integer>
-            <key>CreationDate</key>
-            <date>$(date -u +%Y-%m-%dT%H:%M:%SZ)</date>
-            <key>Name</key>
-            <string>Aether</string>
-            <key>SchemeName</key>
-            <string>Runner</string>
-          </dict>
-          </plist>
-          IPEOF
-
-          # ── 5. Export PKG ─────────────────────────────────────────────────
+          # Create PKG directly — no xcarchive needed
           mkdir -p build/macos/pkg
-          xcodebuild -quiet -exportArchive \
-            -archivePath "$ARCHIVE" \
-            -exportOptionsPlist macos/ExportOptions.plist \
-            -exportPath build/macos/pkg
+          productbuild --component "$APP" /Applications \
+            build/macos/pkg/Aether.pkg
+          echo "✅ PKG created"
 
       - name: Upload macOS PKG to TestFlight
         run: |
