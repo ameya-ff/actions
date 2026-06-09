@@ -10,24 +10,41 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete old workflow runs
-        uses: Mattraks/delete-workflow-runs@v2
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 1
-
-      - name: Delete own previous cleanup runs
+      - name: Wait for triggering workflows to complete
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Delete all previous cleanup runs (keep only the current one)
-          gh run list --repo "${{ github.repository }}" \
-            --workflow "Cleanup old workflow runs" \
-            --json databaseId,status \
-            --jq '.[] | select(.status == "completed") | .databaseId' \
-          | while read -r id; do
-            gh run delete "$id" --repo "${{ github.repository }}" 2>/dev/null || true
+          # Wait up to 2 minutes for any in-progress "Aether Flutter" runs to finish.
+          # This ensures the build that triggered us has fully completed before we delete it.
+          for i in $(seq 1 12); do
+            IN_PROGRESS=$(gh run list --repo "${{ github.repository }}" \
+              --workflow "Aether Flutter" \
+              --status in_progress \
+              --json databaseId --jq 'length')
+            if [ "$IN_PROGRESS" -eq 0 ]; then
+              echo "✅ No in-progress builds — proceeding to cleanup"
+              break
+            fi
+            echo "⏳ $IN_PROGRESS build(s) still running, waiting 10s... ($i/12)"
+            sleep 10
           done
-          echo "✅ Old cleanup runs deleted"
+
+      - name: Delete all completed workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Delete ALL completed runs from every workflow (except this current cleanup run)
+          CURRENT_RUN_ID="${{ github.run_id }}"
+
+          gh run list --repo "${{ github.repository }}" \
+            --status completed \
+            --limit 100 \
+            --json databaseId \
+            --jq '.[].databaseId' \
+          | while read -r id; do
+            if [ "$id" != "$CURRENT_RUN_ID" ]; then
+              echo "Deleting run $id..."
+              gh run delete "$id" --repo "${{ github.repository }}" 2>/dev/null || true
+            fi
+          done
+          echo "✅ All completed runs deleted"
