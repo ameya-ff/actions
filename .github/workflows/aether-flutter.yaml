@@ -522,8 +522,8 @@ jobs:
       # ──────────────────────────────────────────────────────────────────────
       - name: Verify native symbols in macOS binary
         run: |
-          APP=build/macos/Build/Products/Release/aether_flutter.app
-          BINARY="$APP/Contents/MacOS/aether_flutter"
+          APP=build/macos/Build/Products/Release/Farflung.app
+          BINARY="$APP/Contents/MacOS/Farflung"
 
           echo "=== Native symbol audit ==="
           echo "Binary: $BINARY"
@@ -579,7 +579,7 @@ jobs:
             echo "::error::This indicates DEAD_CODE_STRIPPING stripped FFI symbols."
             echo "::error::Fix: ensure DEAD_CODE_STRIPPING=NO in project.pbxproj and"
             echo "::error::     libllama.a is NOT in LlamaNative.podspec vendored_libraries."
-            echo "::error::Run locally: nm build/macos/Build/Products/Release/aether_flutter.app/Contents/MacOS/aether_flutter | grep llama_backend_init"
+            echo "::error::Run locally: nm build/macos/Build/Products/Release/Farflung.app/Contents/MacOS/Farflung | grep llama_backend_init"
             exit 1
           fi
 
@@ -608,7 +608,7 @@ jobs:
         run: |
           mkdir -p macos_artifact
           cd build/macos/Build/Products/Release
-          mv aether_flutter.app Aether.app
+          mv Farflung.app Aether.app
 
           CERT="$MACOS_SIGNING_IDENTITY"
           ENTITLEMENTS="../../../../../macos/Runner/Release.entitlements"
