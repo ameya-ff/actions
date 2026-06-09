@@ -1166,3 +1166,13 @@ jobs:
           git commit -m "ci-logs: aether-flutter ${DIR_NAME}" --allow-empty
           git push origin main
           echo "✅ Logs archived to ${OWNER}/debug/${LOG_DIR}"
+
+      - name: Trigger log cleanup
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          # Trigger the cleanup workflow to delete old runs from this public repo.
+          # This run will still be "in_progress" so it won't be deleted yet —
+          # but all prior completed runs will be cleaned up immediately.
+          gh workflow run "Cleanup old workflow runs" --repo "${{ github.repository }}" || true
+          echo "✅ Cleanup triggered"
