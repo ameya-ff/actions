@@ -945,6 +945,11 @@ jobs:
           # the Apple Developer account's 10-cert limit after ~10 CI runs).
           # The Distribution cert was already imported into the ephemeral keychain
           # in the "Import iOS Distribution certificate" step above.
+          #
+          # PROVISIONING_PROFILE_SPECIFIER is scoped to Runner target only via
+          # the Runner[sdk=iphoneos*] syntax. Without scoping, xcodebuild
+          # broadcasts it to all CocoaPods targets (which don't support profiles),
+          # causing dozens of "does not support provisioning profiles" errors.
           xcodebuild -quiet \
             -workspace ios/Runner.xcworkspace \
             -scheme Runner \
@@ -954,7 +959,7 @@ jobs:
             archive \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="${IOS_PROVISION_PROFILE_NAME}" \
+            "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]=${IOS_PROVISION_PROFILE_NAME}" \
             DEVELOPMENT_TEAM=JDXS7993X9 \
             "OTHER_CODE_SIGN_FLAGS=--keychain ${KEYCHAIN_PATH}" \
             COMPILER_INDEX_STORE_ENABLE=NO \
