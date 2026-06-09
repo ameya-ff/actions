@@ -1060,6 +1060,8 @@ jobs:
               replacement = f'CODE_SIGN_STYLE = Manual; CODE_SIGN_IDENTITY = \"Apple Distribution\"; PROVISIONING_PROFILE_SPECIFIER = \"{profile_name}\";'
               content = content.replace('CODE_SIGN_STYLE = Automatic;', replacement)
               content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
+              content = content.replace('\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"iPhone Developer\";', '\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"Apple Distribution\";')
+              content = content.replace('\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"Apple Development\";', '\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"Apple Distribution\";')
               with open(path, 'w') as f:
                   f.write(content)
           "
