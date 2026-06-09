@@ -15,5 +15,19 @@ jobs:
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
-          retain_days: 1
-          keep_minimum_runs: 0
+          retain_days: 0
+          keep_minimum_runs: 1
+
+      - name: Delete own previous cleanup runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Delete all previous cleanup runs (keep only the current one)
+          gh run list --repo "${{ github.repository }}" \
+            --workflow "Cleanup old workflow runs" \
+            --json databaseId,status \
+            --jq '.[] | select(.status == "completed") | .databaseId' \
+          | while read -r id; do
+            gh run delete "$id" --repo "${{ github.repository }}" 2>/dev/null || true
+          done
+          echo "✅ Old cleanup runs deleted"
