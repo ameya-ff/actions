@@ -781,21 +781,24 @@ jobs:
           # Extract entitlements from the provisioning profile.
           # The profile contains application-identifier and team-identifier which
           # MUST be present in the codesign signature for TestFlight (ITMS-90886).
-          # Release.entitlements alone doesn't have these — the profile does.
           security cms -D -i "$PP" > /tmp/pp.plist
           /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' /tmp/pp.plist > /tmp/mas_entitlements.plist
-          echo "Entitlements extracted from provisioning profile:"
-          cat /tmp/mas_entitlements.plist
+          
+          # Merge the App Store profile entitlements with our base app capabilities (App Sandbox, etc)
+          cp macos/Runner/Release.entitlements /tmp/merged.plist
+          /usr/libexec/PlistBuddy -c "Merge /tmp/mas_entitlements.plist" /tmp/merged.plist
+          echo "Merged entitlements for re-signing:"
+          cat /tmp/merged.plist
 
-          # Re-sign with App Store Distribution cert using profile entitlements
+          # Re-sign with App Store Distribution cert using the merged entitlements
           # (app was signed with Developer ID for R2/DMG; TestFlight needs App Store cert)
           codesign --force --deep --options runtime \
             --sign "$MACOS_APP_STORE_SIGNING_IDENTITY" \
             --keychain "$KEYCHAIN_PATH" \
-            --entitlements /tmp/mas_entitlements.plist \
+            --entitlements /tmp/merged.plist \
             "$APP"
           codesign --verify --verbose "$APP"
-          echo "✅ Re-signed with App Store Distribution cert + profile entitlements"
+          echo "✅ Re-signed with App Store Distribution cert + merged entitlements"
 
           # Create signed PKG — Apple requires the installer package to be
           # signed with a "3rd Party Mac Developer Installer" certificate.
