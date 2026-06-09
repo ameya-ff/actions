@@ -1144,18 +1144,24 @@ jobs:
           SUMMARY_EOF
 
           # ── Download per-job logs ───────────────────────────────────────
-          # gh run view --log outputs all jobs; split by job name.
-          gh run view "${RUN_ID}" --repo "${{ github.repository }}" --log > /tmp/full_log.txt 2>/dev/null || true
+          # `gh run view --log` fails for in-progress runs (archive-logs is
+          # still running), so we download logs per-job via the API instead.
+          # The build/macos/ios jobs are already completed at this point
+          # (guaranteed by `needs:`).
+          JOB_IDS=$(gh api "repos/${{ github.repository }}/actions/runs/${RUN_ID}/jobs" \
+            --jq '.jobs[] | select(.status == "completed") | "\(.id) \(.name)"' 2>/dev/null || true)
 
-          if [ -s /tmp/full_log.txt ]; then
-            # Extract unique job names (first column, tab-separated)
-            grep -oP '^[^\t]+' /tmp/full_log.txt | sort -u | while read -r job; do
-              # Sanitize job name for filename
-              SAFE_NAME=$(echo "$job" | tr ' ()/' '-' | tr '[:upper:]' '[:lower:]' | sed 's/--*/-/g; s/-$//')
-              grep "^${job}	" /tmp/full_log.txt > "/tmp/debug/${LOG_DIR}/${SAFE_NAME}.log" 2>/dev/null || true
+          if [ -n "$JOB_IDS" ]; then
+            echo "$JOB_IDS" | while read -r job_id job_name; do
+              SAFE_NAME=$(echo "$job_name" | tr ' ()/' '-' | tr '[:upper:]' '[:lower:]' | sed 's/--*/-/g; s/-$//')
+              # Download job log via API (returns plain text)
+              gh api "repos/${{ github.repository }}/actions/jobs/${job_id}/logs" \
+                > "/tmp/debug/${LOG_DIR}/${SAFE_NAME}.log" 2>/dev/null || true
+              SIZE=$(wc -c < "/tmp/debug/${LOG_DIR}/${SAFE_NAME}.log" | tr -d ' ')
+              echo "📄 ${SAFE_NAME}.log (${SIZE} bytes)"
             done
           else
-            echo "No logs available (run may still be in progress)" > "/tmp/debug/${LOG_DIR}/no-logs.txt"
+            echo "No completed jobs found" > "/tmp/debug/${LOG_DIR}/no-logs.txt"
           fi
 
           # ── Commit and push ─────────────────────────────────────────────
