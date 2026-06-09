@@ -1088,3 +1088,81 @@ jobs:
         run: |
           rm -f ~/private_keys/AuthKey_${{ secrets.AETHER_APP_STORE_CONNECT_KEY_ID }}.p8
           echo "API key deleted."
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Archive build logs to private repo before daily cleanup deletes them.
+  # Runs after ALL jobs complete (even on failure) so we always capture logs.
+  # ──────────────────────────────────────────────────────────────────────────
+  archive-logs:
+    name: Archive CI Logs
+    needs: [build, build-macos, build-ios]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Archive logs to private repo
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          OWNER: ${{ secrets.OWNER }}
+          RUN_ID: ${{ github.run_id }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env || 'unknown' }}
+          GIT_REF: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref || 'unknown' }}
+          PLATFORM: ${{ github.event.client_payload.platform || github.event.inputs.platform || 'all' }}
+        run: |
+          set -euo pipefail
+
+          # ── Compute directory name ──────────────────────────────────────
+          TIMESTAMP=$(date -u +'%Y-%m-%dT%H%M')
+          DIR_NAME="${TIMESTAMP}_${ENV}_${GIT_REF}"
+          LOG_DIR="ci-logs/aether-flutter/${DIR_NAME}"
+
+          # ── Clone private debug repo ────────────────────────────────────
+          git clone --depth 1 "https://ameya-ff:${GH_TOKEN}@github.com/${OWNER}/debug.git" /tmp/debug
+          mkdir -p "/tmp/debug/${LOG_DIR}"
+
+          # ── Fetch job metadata ──────────────────────────────────────────
+          JOBS_JSON=$(gh api "repos/${{ github.repository }}/actions/runs/${RUN_ID}/jobs" \
+            --jq '.jobs[] | {name, status, conclusion, started_at, completed_at}' 2>/dev/null || echo '{}')
+
+          # ── Build summary.md ────────────────────────────────────────────
+          cat > "/tmp/debug/${LOG_DIR}/summary.md" << SUMMARY_EOF
+          # Build: ${DIR_NAME}
+
+          | Field      | Value                          |
+          |------------|--------------------------------|
+          | Run ID     | [${RUN_ID}](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}) |
+          | Workflow   | ${{ github.workflow }}          |
+          | Trigger    | ${{ github.event_name }}        |
+          | Env        | ${ENV}                          |
+          | Git Ref    | ${GIT_REF}                      |
+          | Platform   | ${PLATFORM}                     |
+          | Date       | ${TIMESTAMP} UTC                |
+
+          ## Job Results
+          \`\`\`json
+          ${JOBS_JSON}
+          \`\`\`
+          SUMMARY_EOF
+
+          # ── Download per-job logs ───────────────────────────────────────
+          # gh run view --log outputs all jobs; split by job name.
+          gh run view "${RUN_ID}" --repo "${{ github.repository }}" --log > /tmp/full_log.txt 2>/dev/null || true
+
+          if [ -s /tmp/full_log.txt ]; then
+            # Extract unique job names (first column, tab-separated)
+            grep -oP '^[^\t]+' /tmp/full_log.txt | sort -u | while read -r job; do
+              # Sanitize job name for filename
+              SAFE_NAME=$(echo "$job" | tr ' ()/' '-' | tr '[:upper:]' '[:lower:]' | sed 's/--*/-/g; s/-$//')
+              grep "^${job}	" /tmp/full_log.txt > "/tmp/debug/${LOG_DIR}/${SAFE_NAME}.log" 2>/dev/null || true
+            done
+          else
+            echo "No logs available (run may still be in progress)" > "/tmp/debug/${LOG_DIR}/no-logs.txt"
+          fi
+
+          # ── Commit and push ─────────────────────────────────────────────
+          cd /tmp/debug
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add "${LOG_DIR}"
+          git commit -m "ci-logs: aether-flutter ${DIR_NAME}" --allow-empty
+          git push origin main
+          echo "✅ Logs archived to ${OWNER}/debug/${LOG_DIR}"
