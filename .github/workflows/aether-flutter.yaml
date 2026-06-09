@@ -472,28 +472,12 @@ jobs:
 
       - name: Configure Xcode signing for CI
         run: |
-          python3 -c "
-          import os
-          path = 'macos/Runner.xcodeproj/project.pbxproj'
-          if os.path.exists(path):
-              with open(path, 'r') as f:
-                  content = f.read()
-              content = content.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
-              content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
-              # Ad-hoc for the Xcode build phase — skips profile capability
-              # validation. We re-sign with Developer ID after the build.
-              content = content.replace('\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"Apple Development\";',
-                                        '\"CODE_SIGN_IDENTITY[sdk=macosx*]\" = \"-\";')
-              # Set empty PROVISIONING_PROFILE_SPECIFIER to the real profile
-              # so Xcode embeds it (needed for restricted entitlements).
-              content = content.replace('PROVISIONING_PROFILE_SPECIFIER = "";',
-                                        'PROVISIONING_PROFILE_SPECIFIER = \"Aether macOS Developer ID\";')
-              with open(path, 'w') as f:
-                  f.write(content)
-              print('Successfully updated Xcode codesigning settings for CI')
-          else:
-              print('project.pbxproj not found')
-          "
+          PBX=macos/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBX"
+          sed -i '' 's/ProvisioningStyle = Automatic/ProvisioningStyle = Manual/g' "$PBX"
+          sed -i '' 's/Apple Development/-/g' "$PBX"
+          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = ""/PROVISIONING_PROFILE_SPECIFIER = "Aether macOS Developer ID"/g' "$PBX"
+          echo "Xcode signing configured for CI ✓"
 
       - name: Install provisioning profile
         run: |
