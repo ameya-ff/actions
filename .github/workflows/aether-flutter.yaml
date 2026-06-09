@@ -1090,95 +1090,19 @@ jobs:
           echo "API key deleted."
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Archive build logs to private repo before daily cleanup deletes them.
-  # Runs after ALL jobs complete (even on failure) so we always capture logs.
+  # Trigger cleanup after all builds complete.
+  # The cleanup workflow archives logs to farflungai/debug (private),
+  # then deletes runs from this public repo.
   # ──────────────────────────────────────────────────────────────────────────
-  archive-logs:
-    name: Archive CI Logs
+  trigger-cleanup:
+    name: Trigger Log Cleanup
     needs: [build, build-macos, build-ios]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Archive logs to private repo
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          OWNER: ${{ secrets.OWNER }}
-          RUN_ID: ${{ github.run_id }}
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env || 'unknown' }}
-          GIT_REF: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref || 'unknown' }}
-          PLATFORM: ${{ github.event.client_payload.platform || github.event.inputs.platform || 'all' }}
-        run: |
-          set -euo pipefail
-
-          # ── Compute directory name ──────────────────────────────────────
-          TIMESTAMP=$(date -u +'%Y-%m-%dT%H%M')
-          DIR_NAME="${TIMESTAMP}_${ENV}_${GIT_REF}"
-          LOG_DIR="ci-logs/aether-flutter/${DIR_NAME}"
-
-          # ── Clone private debug repo ────────────────────────────────────
-          git clone --depth 1 "https://ameya-ff:${GH_TOKEN}@github.com/${OWNER}/debug.git" /tmp/debug
-          mkdir -p "/tmp/debug/${LOG_DIR}"
-
-          # ── Fetch job metadata ──────────────────────────────────────────
-          JOBS_JSON=$(gh api "repos/${{ github.repository }}/actions/runs/${RUN_ID}/jobs" \
-            --jq '.jobs[] | {name, status, conclusion, started_at, completed_at}' 2>/dev/null || echo '{}')
-
-          # ── Build summary.md ────────────────────────────────────────────
-          cat > "/tmp/debug/${LOG_DIR}/summary.md" << SUMMARY_EOF
-          # Build: ${DIR_NAME}
-
-          | Field      | Value                          |
-          |------------|--------------------------------|
-          | Run ID     | [${RUN_ID}](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}) |
-          | Workflow   | ${{ github.workflow }}          |
-          | Trigger    | ${{ github.event_name }}        |
-          | Env        | ${ENV}                          |
-          | Git Ref    | ${GIT_REF}                      |
-          | Platform   | ${PLATFORM}                     |
-          | Date       | ${TIMESTAMP} UTC                |
-
-          ## Job Results
-          \`\`\`json
-          ${JOBS_JSON}
-          \`\`\`
-          SUMMARY_EOF
-
-          # ── Download per-job logs ───────────────────────────────────────
-          # `gh run view --log` fails for in-progress runs (archive-logs is
-          # still running), so we download logs per-job via the API instead.
-          # The build/macos/ios jobs are already completed at this point
-          # (guaranteed by `needs:`).
-          JOB_IDS=$(gh api "repos/${{ github.repository }}/actions/runs/${RUN_ID}/jobs" \
-            --jq '.jobs[] | select(.status == "completed") | "\(.id) \(.name)"' 2>/dev/null || true)
-
-          if [ -n "$JOB_IDS" ]; then
-            echo "$JOB_IDS" | while read -r job_id job_name; do
-              SAFE_NAME=$(echo "$job_name" | tr ' ()/' '-' | tr '[:upper:]' '[:lower:]' | sed 's/--*/-/g; s/-$//')
-              # Download job log via API (returns plain text)
-              gh api "repos/${{ github.repository }}/actions/jobs/${job_id}/logs" \
-                > "/tmp/debug/${LOG_DIR}/${SAFE_NAME}.log" 2>/dev/null || true
-              SIZE=$(wc -c < "/tmp/debug/${LOG_DIR}/${SAFE_NAME}.log" | tr -d ' ')
-              echo "📄 ${SAFE_NAME}.log (${SIZE} bytes)"
-            done
-          else
-            echo "No completed jobs found" > "/tmp/debug/${LOG_DIR}/no-logs.txt"
-          fi
-
-          # ── Commit and push ─────────────────────────────────────────────
-          cd /tmp/debug
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add "${LOG_DIR}"
-          git commit -m "ci-logs: aether-flutter ${DIR_NAME}" --allow-empty
-          git push origin main
-          echo "✅ Logs archived to ${OWNER}/debug/${LOG_DIR}"
-
-      - name: Trigger log cleanup
+      - name: Trigger cleanup workflow
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          # Trigger the cleanup workflow to delete old runs from this public repo.
-          # This run will still be "in_progress" so it won't be deleted yet —
-          # but all prior completed runs will be cleaned up immediately.
           gh workflow run "Cleanup old workflow runs" --repo "${{ github.repository }}" || true
           echo "✅ Cleanup triggered"
