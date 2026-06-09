@@ -1050,21 +1050,80 @@ jobs:
           # Patch ios/Runner.xcodeproj/project.pbxproj to use Manual signing
           # and inject the Distribution profile and identity. This is required
           # because flutter build ipa does not let us pass these as xcodebuild args.
-          python3 -c "
-          import os
+          # NOTE: Uses a heredoc ('EOF') to avoid shell escaping issues with Python.
+          cat > /tmp/patch_pbxproj.py << 'PYEOF'
+          import os, re, sys
           path = 'ios/Runner.xcodeproj/project.pbxproj'
-          if os.path.exists(path):
-              with open(path, 'r') as f:
-                  content = f.read()
-              profile_name = os.environ.get('IOS_PROVISION_PROFILE_NAME', 'Aether iOS App Store')
-              replacement = f'CODE_SIGN_STYLE = Manual; CODE_SIGN_IDENTITY = \"Apple Distribution\"; PROVISIONING_PROFILE_SPECIFIER = \"{profile_name}\";'
-              content = content.replace('CODE_SIGN_STYLE = Automatic;', replacement)
-              content = content.replace('ProvisioningStyle = Automatic;', 'ProvisioningStyle = Manual;')
-              content = content.replace('\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"iPhone Developer\";', '\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"Apple Distribution\";')
-              content = content.replace('\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"Apple Development\";', '\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"Apple Distribution\";')
-              with open(path, 'w') as f:
-                  f.write(content)
-          "
+          if not os.path.exists(path):
+              print('Error: ios/Runner.xcodeproj/project.pbxproj not found!')
+              sys.exit(1)
+          with open(path, 'r') as f:
+              content = f.read()
+
+          profile_name = os.environ.get('IOS_PROVISION_PROFILE_NAME', 'Aether iOS App Store')
+          print(f'Patching project.pbxproj with profile: {profile_name}')
+
+          # 1. Add ProvisioningStyle = Manual to Runner target in TargetAttributes
+          target_attr_pattern = re.compile(
+              r'(97C146ED1CF9000F007C117D = \{\s*CreatedOnToolsVersion = [0-9.]+;\s*LastSwiftMigration = \d+;)(\s*\};)'
+          )
+          content = target_attr_pattern.sub(
+              r'\1\n\t\t\t\t\t\tProvisioningStyle = Manual;\2', content
+          )
+
+          # 2. Inject signing into Runner Release + Profile XCBuildConfiguration blocks
+          config_pattern = re.compile(
+              r'(\t\t([0-9A-F]{24}) /\* (Release|Profile) \*/ = \{\n'
+              r'\t\t\tisa = XCBuildConfiguration;\n'
+              r'.*?'
+              r'\t\t\tbuildSettings = \{\n'
+              r')(.*?)(\n\t\t\t\};)',
+              re.DOTALL
+          )
+          def replace_config(match):
+              prefix = match.group(1)
+              settings = match.group(4)
+              suffix = match.group(5)
+              if 'PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether;' not in settings:
+                  return match.group(0)
+              new_lines = []
+              for line in settings.split('\n'):
+                  if any(k in line for k in ['CODE_SIGN_STYLE', 'CODE_SIGN_IDENTITY', 'PROVISIONING_PROFILE_SPECIFIER']):
+                      continue
+                  new_lines.append(line)
+              indent = '\t\t\t\t'
+              new_lines.append(f'{indent}CODE_SIGN_IDENTITY = "Apple Distribution";')
+              new_lines.append(f'{indent}CODE_SIGN_STYLE = Manual;')
+              new_lines.append(f'{indent}PROVISIONING_PROFILE_SPECIFIER = "{profile_name}";')
+              return prefix + '\n'.join(new_lines) + suffix
+          content = config_pattern.sub(replace_config, content)
+
+          # 3. Replace CODE_SIGN_IDENTITY in project-level configs
+          content = content.replace(
+              '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";',
+              '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";'
+          )
+          content = content.replace(
+              '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";',
+              '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";'
+          )
+
+          with open(path, 'w') as f:
+              f.write(content)
+
+          # Self-verification
+          with open(path, 'r') as f:
+              final = f.read()
+          ok = True
+          for check in ['ProvisioningStyle = Manual;', 'CODE_SIGN_STYLE = Manual;']:
+              if check not in final:
+                  print(f'FATAL: "{check}" not found after patching!')
+                  ok = False
+          if not ok:
+              sys.exit(1)
+          print('project.pbxproj patched successfully ✓')
+          PYEOF
+          python3 /tmp/patch_pbxproj.py
 
           # Use flutter build ipa instead of raw xcodebuild archive.
           # Flutter's tooling handles CocoaPods integration and signing correctly:
