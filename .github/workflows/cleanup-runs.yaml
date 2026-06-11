@@ -5,6 +5,11 @@ on:
     # Run daily at 06:00 UTC
     - cron: '0 6 * * *'
   workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Optional specific run ID to archive and delete'
+        required: false
+        type: string
 
 jobs:
   archive-and-cleanup:
@@ -14,18 +19,33 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for i in $(seq 1 24); do
-            IN_PROGRESS=$(gh run list --repo "${{ github.repository }}" \
-              --workflow "Aether Flutter" \
-              --status in_progress \
-              --json databaseId --jq 'length')
-            if [ "$IN_PROGRESS" -eq 0 ]; then
-              echo "✅ No in-progress builds — proceeding"
-              break
-            fi
-            echo "⏳ $IN_PROGRESS build(s) still running, waiting 10s... ($i/24)"
-            sleep 10
-          done
+          SPECIFIC_RUN_ID="${{ github.event.inputs.run_id }}"
+          if [ -n "$SPECIFIC_RUN_ID" ]; then
+            echo "⏳ Waiting for specific run $SPECIFIC_RUN_ID to complete..."
+            for i in $(seq 1 30); do
+              STATUS=$(gh api "repos/${{ github.repository }}/actions/runs/${SPECIFIC_RUN_ID}" --jq '.status' 2>/dev/null || echo "queued")
+              if [ "$STATUS" = "completed" ]; then
+                echo "✅ Run ${SPECIFIC_RUN_ID} has completed — proceeding"
+                break
+              fi
+              echo "⏳ Run ${SPECIFIC_RUN_ID} is ${STATUS}, waiting 10s... ($i/30)"
+              sleep 10
+            done
+          else
+            echo "⏳ Waiting for Aether Flutter builds to complete..."
+            for i in $(seq 1 24); do
+              IN_PROGRESS=$(gh run list --repo "${{ github.repository }}" \
+                --workflow "Aether Flutter" \
+                --status in_progress \
+                --json databaseId --jq 'length')
+              if [ "$IN_PROGRESS" -eq 0 ]; then
+                echo "✅ No in-progress builds — proceeding"
+                break
+              fi
+              echo "⏳ $IN_PROGRESS build(s) still running, waiting 10s... ($i/24)"
+              sleep 10
+            done
+          fi
 
       - name: Archive and delete completed runs
         env:
@@ -34,15 +54,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          # ── Get all completed non-cleanup runs ──────────────────────────
-          RUNS=$(gh run list --repo "${{ github.repository }}" \
-            --status completed \
-            --limit 100 \
-            --json databaseId,name,createdAt,event,conclusion,headBranch \
-            --jq '.[] | select(.name != "Cleanup old workflow runs") | "\(.databaseId) \(.conclusion) \(.createdAt)"' \
-            2>/dev/null || true)
+          # ── Get completed run(s) to process ─────────────────────────────
+          SPECIFIC_RUN_ID="${{ github.event.inputs.run_id }}"
+          if [ -n "$SPECIFIC_RUN_ID" ]; then
+            RUNS=$(gh api "repos/${{ github.repository }}/actions/runs/${SPECIFIC_RUN_ID}" \
+              --jq '"\(.id) \(.conclusion) \(.created_at)"' 2>/dev/null || true)
+          else
+            # ── Get all completed non-cleanup runs ──────────────────────────
+            RUNS=$(gh run list --repo "${{ github.repository }}" \
+              --status completed \
+              --limit 100 \
+              --json databaseId,name,createdAt,event,conclusion,headBranch \
+              --jq '.[] | select(.name != "Cleanup old workflow runs") | "\(.databaseId) \(.conclusion) \(.createdAt)"' \
+              2>/dev/null || true)
+          fi
 
-          if [ -z "$RUNS" ]; then
+          if [ -z "$RUNS" ] || [ "$RUNS" = "null null null" ] || [ "$RUNS" = "  " ] || [ "$RUNS" = "null" ]; then
             echo "No completed runs to archive"
             exit 0
           fi
@@ -65,7 +92,8 @@ jobs:
             RUN_TITLE=$(echo "$RUN_META" | jq -r '.display_title // "unknown"' 2>/dev/null || echo "unknown")
 
             DIR_NAME="${TIMESTAMP}_${conclusion}_${run_id}"
-            LOG_DIR="ci-logs/aether-flutter/${DIR_NAME}"
+            WORKFLOW_NAME=$(echo "$RUN_META" | jq -r '.name // "unknown"' | tr ' ' '-' | tr '[:upper:]' '[:lower:]' 2>/dev/null || echo "unknown")
+            LOG_DIR="ci-logs/${WORKFLOW_NAME}/${DIR_NAME}"
             mkdir -p "/tmp/debug/${LOG_DIR}"
 
             # ── Fetch job metadata ──────────────────────────────────────
