@@ -44,14 +44,6 @@ jobs:
             --arg branch "$BRANCH_OR_TAG" \
             --arg run_id "${{ github.run_id }}" \
             --arg repo "${{ github.repository }}" \
-            '{text: "🔄 **PowerSync Deploy Started** (\text: \($env)) | Ref: `\($branch)` | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)>"}')
-
-          # Fix payload syntax (escaped parentheses syntax)
-          PAYLOAD=$(jq -n \
-            --arg env "$ENV" \
-            --arg branch "$BRANCH_OR_TAG" \
-            --arg run_id "${{ github.run_id }}" \
-            --arg repo "${{ github.repository }}" \
             '{text: "🔄 **PowerSync Deploy Started** (\($env)) | Ref: `\($branch)` | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)>"}')
 
           curl -s -X POST \
