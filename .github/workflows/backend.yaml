@@ -23,12 +23,37 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
   cancel-in-progress: true
+
 jobs:
   build:
     name: Build & Push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Send Initial Google Chat Notification
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+        run: |
+          if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
+            echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg env "$ENV" \
+            --arg branch "$BRANCH_OR_TAG" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg repo "${{ github.repository }}" \
+            '{text: "🔄 **Backend Deploy Started** (\($env)) | Branch/Tag: `\($branch)` | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)>"}')
+
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$GOOGLE_CHAT_WEBHOOK"
+
       - shell: bash
         env:
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
@@ -39,6 +64,7 @@ jobs:
         run: |
           git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/$REPO.git" tmp
           mv tmp/* .
+
       - shell: bash
         run: |
           cd tmp
@@ -49,7 +75,8 @@ jobs:
           else
             echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
             echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
-          fi 
+          fi
+
       - name: Determine GIT_SHA
         shell: bash
         env:
@@ -63,20 +90,24 @@ jobs:
             GIT_SHA=$BRANCH_OR_TAG
           fi
           echo "GIT_SHA=$GIT_SHA" >> $GITHUB_ENV
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v1
         with:
           token_format: access_token
           credentials_json: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
+
       - name: Login to GAR
         uses: docker/login-action@v3
         with:
           registry: ${{ secrets.GCP_GAR_DOCKER_REGISTRY }}
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
+
       - name: Build and push - 1
         uses: docker/build-push-action@v6
         env:
@@ -90,22 +121,49 @@ jobs:
           build-args: |
             GIT_SHA=${{ env.GIT_SHA }}
 
+      - name: Send Google Chat Failure Notification (Build)
+        if: failure()
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+        run: |
+          if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
+            echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg env "$ENV" \
+            --arg branch "$BRANCH_OR_TAG" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg repo "${{ github.repository }}" \
+            '{text: "❌ **Backend Deploy Failed** (\($env)) | Branch/Tag: `\($branch)` | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)> | Build stage failed"}')
+
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$GOOGLE_CHAT_WEBHOOK"
+
   deploy:
     name: Deploy to GKE
     runs-on: ubuntu-latest
     needs: build
     steps:
       - uses: actions/checkout@v3
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v1
         with:
           token_format: access_token
           credentials_json: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
+
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
+
       - name: Configure gcloud
         shell: bash
         env:
@@ -114,6 +172,7 @@ jobs:
         run: |
           gcloud components install gke-gcloud-auth-plugin
           gcloud container clusters get-credentials $GCP_GKE_CLUSTER_NAME --region $GCP_REGION
+
       - name: Deploy and Patch
         shell: bash
         env:
@@ -130,7 +189,54 @@ jobs:
           DEPLOYMENT=$(kubectl get deployments -n $NAMESPACE -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${WORKFLOW}" | grep "${DEPLOYMENT_1}" | grep "${ENV}" | head -n1)
           kubectl patch deployment $DEPLOYMENT -n $NAMESPACE -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\"}}}}}"
 
-
           kubectl apply -k infra/gke/k8s/$WORKFLOW/$DEPLOYMENT_2/$ENV/
           DEPLOYMENT=$(kubectl get deployments -n $NAMESPACE -o jsonpath="{.items[*].metadata.name}" | tr ' ' '\n' | grep "${WORKFLOW}" | grep "${DEPLOYMENT_2}" | grep "${ENV}" | head -n1)
           kubectl patch deployment $DEPLOYMENT -n $NAMESPACE -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\"}}}}}"
+
+      - name: Send Google Chat Success Notification
+        if: success()
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+        run: |
+          if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
+            echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg env "$ENV" \
+            --arg branch "$BRANCH_OR_TAG" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg repo "${{ github.repository }}" \
+            '{text: "✅ **Backend Deploy Succeeded** (\($env)) | Branch/Tag: `\($branch)` | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)>"}')
+
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$GOOGLE_CHAT_WEBHOOK"
+
+      - name: Send Google Chat Failure Notification (Deploy)
+        if: failure()
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+        run: |
+          if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
+            echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg env "$ENV" \
+            --arg branch "$BRANCH_OR_TAG" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg repo "${{ github.repository }}" \
+            '{text: "❌ **Backend Deploy Failed** (\($env)) | Branch/Tag: `\($branch)` | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)> | Deploy stage failed"}')
+
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$GOOGLE_CHAT_WEBHOOK"
