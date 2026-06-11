@@ -1116,5 +1116,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          gh workflow run "Cleanup old workflow runs" --repo "${{ github.repository }}" || true
-          echo "✅ Cleanup triggered"
+          gh workflow run "Cleanup old workflow runs" --repo "${{ github.repository }}" -f run_id="${{ github.run_id }}" || true
+          echo "✅ Cleanup triggered for run ${{ github.run_id }}"
