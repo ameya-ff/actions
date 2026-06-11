@@ -67,8 +67,11 @@ jobs:
             backend/powersync-config/sync-rules.yaml \
             infra/gke/k8s/aether/$ENV/configmap-powersync.yaml
 
-          # Apply updated resources (configmap-powersync, deployment-powersync, statefulset-powersync-mongo)
-          kubectl apply --server-side --force-conflicts -k infra/gke/k8s/aether/$ENV/
+          # Apply only updated PowerSync resources, rather than the entire kustomization directory
+          kubectl apply -n $NAMESPACE --server-side --force-conflicts \
+            -f infra/gke/k8s/aether/$ENV/configmap-powersync.yaml \
+            -f infra/gke/k8s/aether/$ENV/statefulset-powersync-mongo.yaml \
+            -f infra/gke/k8s/aether/$ENV/deployment-powersync.yaml
 
           # Restart the powersync deployment to pick up updated configmap
           if kubectl get deployment powersync -n $NAMESPACE &>/dev/null; then
