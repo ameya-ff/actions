@@ -28,6 +28,37 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Send Initial Google Chat Notification
+        env:
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+        run: |
+          if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
+            echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg env "$ENV" \
+            --arg branch "$BRANCH_OR_TAG" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg repo "${{ github.repository }}" \
+            '{text: "🔄 **PowerSync Deploy Started** (\text: \($env)) | Ref: `\($branch)` | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)>"}')
+
+          # Fix payload syntax (escaped parentheses syntax)
+          PAYLOAD=$(jq -n \
+            --arg env "$ENV" \
+            --arg branch "$BRANCH_OR_TAG" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg repo "${{ github.repository }}" \
+            '{text: "🔄 **PowerSync Deploy Started** (\($env)) | Ref: `\($branch)` | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)>"}')
+
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$GOOGLE_CHAT_WEBHOOK"
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v1
@@ -82,6 +113,54 @@ jobs:
             echo "::error::PowerSync deployment not found in namespace $NAMESPACE"
             exit 1
           fi
+
+      - name: Send Google Chat Success Notification
+        if: success()
+        env:
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+        run: |
+          if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
+            echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg env "$ENV" \
+            --arg branch "$BRANCH_OR_TAG" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg repo "${{ github.repository }}" \
+            '{text: "✅ **PowerSync Deploy Succeeded** (\($env)) | Ref: `\($branch)` | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)>"}')
+
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$GOOGLE_CHAT_WEBHOOK"
+
+      - name: Send Google Chat Failure Notification
+        if: failure()
+        env:
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+        run: |
+          if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
+            echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg env "$ENV" \
+            --arg branch "$BRANCH_OR_TAG" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg repo "${{ github.repository }}" \
+            '{text: "❌ **PowerSync Deploy Failed** (\($env)) | Ref: `\($branch)` | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)> | Job failed"}')
+
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$GOOGLE_CHAT_WEBHOOK"
 
   trigger-cleanup:
     name: Trigger Log Cleanup
