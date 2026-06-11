@@ -90,8 +90,14 @@ jobs:
             RUN_META=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}" \
               --jq '{name, event, head_branch, run_number, display_title}' 2>/dev/null || echo '{}')
             RUN_TITLE=$(echo "$RUN_META" | jq -r '.display_title // "unknown"' 2>/dev/null || echo "unknown")
+            RUN_NUMBER=$(echo "$RUN_META" | jq -r '.run_number // ""' 2>/dev/null || echo "")
+            # Sanitize display_title → slug: lowercase, spaces/special chars → hyphens, max 40 chars
+            BUILD_SLUG=$(echo "$RUN_TITLE" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed 's/[^a-z0-9]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//' \
+              | cut -c1-40)
 
-            DIR_NAME="${TIMESTAMP}_${conclusion}_${run_id}"
+            DIR_NAME="${TIMESTAMP}_${conclusion}_${run_id}_r${RUN_NUMBER}_${BUILD_SLUG}"
             WORKFLOW_NAME=$(echo "$RUN_META" | jq -r '.name // "unknown"' | tr ' ' '-' | tr '[:upper:]' '[:lower:]' 2>/dev/null || echo "unknown")
             LOG_DIR="ci-logs/${WORKFLOW_NAME}/${DIR_NAME}"
             mkdir -p "/tmp/debug/${LOG_DIR}"
