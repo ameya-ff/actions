@@ -134,7 +134,7 @@ jobs:
           cd /tmp/debug
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add ci-logs/ 2>/dev/null || true
+          git add -f ci-logs/ 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No new logs to commit"
           else
