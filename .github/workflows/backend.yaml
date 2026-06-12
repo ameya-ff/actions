@@ -35,7 +35,7 @@ jobs:
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BACKEND_WEBHOOK }}
         run: |
           if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
             echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
@@ -126,7 +126,7 @@ jobs:
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BACKEND_WEBHOOK }}
         run: |
           if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
             echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
@@ -198,7 +198,7 @@ jobs:
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BACKEND_WEBHOOK }}
         run: |
           if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
             echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
@@ -222,7 +222,7 @@ jobs:
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BACKEND_WEBHOOK }}
         run: |
           if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
             echo "⚠️ GOOGLE_CHAT_BUILDS_WEBHOOK secret is not set. Skipping notification."
