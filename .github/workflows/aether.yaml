@@ -23,32 +23,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build & Push Aether Images
+  notify-start:
+    name: Notify Deploy Started
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          # aether-core and aether-worker share the same Dockerfile (aether/ dir)
-          # with a multi-stage build using the 'prod' target.
-          # The worker differs only by command override in the K8s deployment.
-          - service: aether
-            docker_dir: aether
-            target: prod
-          - service: aether-browser
-            docker_dir: aether-browser
-            target: ""
-          - service: aether-audio
-            docker_dir: aether-audio
-            target: ""
-          - service: aether-image
-            docker_dir: aether-image
-            target: ""
-
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Send Initial Google Chat Notification
+      - name: Send Google Chat Start Notification
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
@@ -70,6 +49,32 @@ jobs:
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
             "$GOOGLE_CHAT_WEBHOOK"
+
+  build:
+    name: Build & Push Aether Images
+    runs-on: ubuntu-latest
+    needs: notify-start
+    strategy:
+      matrix:
+        include:
+          # aether-core and aether-worker share the same Dockerfile (aether/ dir)
+          # with a multi-stage build using the 'prod' target.
+          # The worker differs only by command override in the K8s deployment.
+          - service: aether
+            docker_dir: aether
+            target: prod
+          - service: aether-browser
+            docker_dir: aether-browser
+            target: ""
+          - service: aether-audio
+            docker_dir: aether-audio
+            target: ""
+          - service: aether-image
+            docker_dir: aether-image
+            target: ""
+
+    steps:
+      - uses: actions/checkout@v3
 
       - name: Clone backend repo
         shell: bash
