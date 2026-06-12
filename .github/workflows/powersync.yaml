@@ -30,7 +30,7 @@ jobs:
 
       - name: Send Initial Google Chat Notification
         env:
-          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_POWERSYNC_WEBHOOK }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
         run: |
@@ -109,7 +109,7 @@ jobs:
       - name: Send Google Chat Success Notification
         if: success()
         env:
-          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_POWERSYNC_WEBHOOK }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
         run: |
@@ -133,7 +133,7 @@ jobs:
       - name: Send Google Chat Failure Notification
         if: failure()
         env:
-          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_BUILDS_WEBHOOK }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_POWERSYNC_WEBHOOK }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
         run: |
