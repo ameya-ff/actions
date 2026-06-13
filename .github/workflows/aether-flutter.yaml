@@ -986,13 +986,25 @@ jobs:
           echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> $GITHUB_ENV
           rm -f "$RUNNER_TEMP/ios_cert.p12"
 
-      - name: Install iOS provisioning profile
+      - name: Install iOS provisioning profiles
+        env:
+          DEV_PROFILE_BASE64: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_DEV_BASE64 }}
+          DEV_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_DEV_NAME }}
+          PROD_PROFILE_BASE64: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_BASE64 }}
+          PROD_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          # Write to both locations — Xcode ≤15 uses MobileDevice/, Xcode 16+ uses
-          # Developer/Xcode/UserData/. Writing both ensures compatibility regardless
-          # of which Xcode version the runner selects.
+          if [[ "$ENV" == "dev" ]]; then
+            MAIN_PROFILE_BASE64="$DEV_PROFILE_BASE64"
+            MAIN_PROFILE_NAME="$DEV_PROFILE_NAME"
+          else
+            MAIN_PROFILE_BASE64="$PROD_PROFILE_BASE64"
+            MAIN_PROFILE_NAME="$PROD_PROFILE_NAME"
+          fi
+
+          # Write main app profile
           PP_PATH="$RUNNER_TEMP/aether_ios.mobileprovision"
-          echo "${{ secrets.AETHER_IOS_PROVISION_PROFILE_BASE64 }}" | base64 --decode > "$PP_PATH"
+          echo "$MAIN_PROFILE_BASE64" | base64 --decode > "$PP_PATH"
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
           cp "$PP_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/"
@@ -1004,6 +1016,8 @@ jobs:
           cp "$PP_SHARE_EXT_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/"
           cp "$PP_SHARE_EXT_PATH" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"
           
+          # Export the name so it can be dynamically referenced downstream
+          echo "IOS_PROVISION_PROFILE_NAME=$MAIN_PROFILE_NAME" >> $GITHUB_ENV
           echo "Provisioning profiles installed ✓ (both Xcode 15 + 16 locations)"
 
       - name: Patch Runner.entitlements — aps-environment to production
@@ -1025,7 +1039,6 @@ jobs:
       - name: Write ExportOptions.plist
         env:
           IOS_EXPORT_METHOD: ${{ github.event.client_payload.ios-export-method || github.event.inputs.ios-export-method || 'app-store' }}
-          IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           if [[ "${ENV}" == "dev" ]]; then
@@ -1071,7 +1084,6 @@ jobs:
       - name: Build IPA
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
         run: |
           # Encode dart-defines from env JSON
           cat > /tmp/encode_defines.py << 'PYEOF'
