@@ -1078,6 +1078,7 @@ jobs:
         run: |
           PBX=ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBX"
+          sed -i '' 's/iPhone Developer/Apple Distribution/g' "$PBX"
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether.ShareExtension;/PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether.ShareExtension;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${SHARE_EXT_PROFILE_NAME}\";/g" "$PBX"
           echo "Xcode signing configured for iOS targets on CI ✓"
 
