@@ -104,9 +104,6 @@ jobs:
 
       - run: rsync -a --remove-source-files tmp/ .
 
-      - name: Strip ShareExtension for CI
-        run: python scripts/strip_share_extension.py
-
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -317,9 +314,6 @@ jobs:
           echo "Generated version code: $VERSION_CODE"
 
       - run: rsync -a --remove-source-files tmp/ .
-
-      - name: Strip ShareExtension for CI
-        run: python scripts/strip_share_extension.py
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -920,9 +914,6 @@ jobs:
 
       - run: rsync -a --remove-source-files tmp/ .
 
-      - name: Strip ShareExtension for CI
-        run: python scripts/strip_share_extension.py
-
       - name: Select latest Xcode (prefer Xcode 26+ for iOS 26 SDK)
         run: |
           echo "=== Installed Xcode versions ==="
@@ -1006,7 +997,14 @@ jobs:
           mkdir -p "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
           cp "$PP_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/"
           cp "$PP_PATH" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"
-          echo "Provisioning profile installed ✓ (both Xcode 15 + 16 locations)"
+          
+          # Share Extension Profile
+          PP_SHARE_EXT_PATH="$RUNNER_TEMP/aether_share_ext_ios.mobileprovision"
+          echo "${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_BASE64 }}" | base64 --decode > "$PP_SHARE_EXT_PATH"
+          cp "$PP_SHARE_EXT_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          cp "$PP_SHARE_EXT_PATH" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"
+          
+          echo "Provisioning profiles installed ✓ (both Xcode 15 + 16 locations)"
 
       - name: Patch Runner.entitlements — aps-environment to production
         run: |
@@ -1053,11 +1051,22 @@ jobs:
             <dict>
               <key>${BUNDLE_ID}</key>
               <string>${IOS_PROVISION_PROFILE_NAME}</string>
+              <key>ai.farflung.aether.ShareExtension</key>
+              <string>${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_NAME }}</string>
             </dict>
           </dict>
           </plist>
           EOF
           echo "ExportOptions.plist written for ${BUNDLE_ID} ✓"
+
+      - name: Configure Xcode signing for iOS CI
+        env:
+          SHARE_EXT_PROFILE_NAME: ${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_NAME }}
+        run: |
+          PBX=ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBX"
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether.ShareExtension;/PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether.ShareExtension;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${SHARE_EXT_PROFILE_NAME}\";/g" "$PBX"
+          echo "Xcode signing configured for iOS targets on CI ✓"
 
       - name: Build IPA
         env:
