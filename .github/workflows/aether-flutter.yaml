@@ -755,6 +755,7 @@ jobs:
       # Mac App Store / TestFlight Build
       # ──────────────────────────────────────────────────────────────────────
       - name: Import iOS/Mac App Distribution certificate
+        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         env:
           IOS_CERTIFICATE_BASE64: ${{ secrets.AETHER_IOS_CERTIFICATE_BASE64 }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.AETHER_IOS_CERTIFICATE_PASSWORD }}
@@ -773,6 +774,7 @@ jobs:
           rm -f "$RUNNER_TEMP/ios_cert.p12"
 
       - name: Import Mac Installer Distribution certificate
+        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         env:
           MACOS_INSTALLER_CERT_BASE64: ${{ secrets.MACOS_INSTALLER_CERT_BASE64 }}
           MACOS_INSTALLER_CERT_PASSWORD: ${{ secrets.MACOS_INSTALLER_CERT_PASSWORD }}
@@ -792,6 +794,7 @@ jobs:
           rm -f "$RUNNER_TEMP/installer_cert.p12"
 
       - name: Install Mac App Store provisioning profile
+        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         run: |
           PP_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PP_DIR"
@@ -800,6 +803,7 @@ jobs:
 
 
       - name: Build macOS PKG for TestFlight
+        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         env:
           MACOS_APP_STORE_SIGNING_IDENTITY: ${{ secrets.MACOS_APP_STORE_SIGNING_IDENTITY }}
         run: |
@@ -843,6 +847,7 @@ jobs:
           echo "✅ PKG created and signed with installer certificate"
 
       - name: Upload macOS PKG to TestFlight
+        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         run: |
           echo "Xcode version: $(xcodebuild -version | head -1)"
 
@@ -1163,6 +1168,7 @@ jobs:
           keep-file-fresh: true
 
       - name: Upload to TestFlight
+        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         run: |
           echo "Xcode version: $(xcodebuild -version | head -1)"
 
