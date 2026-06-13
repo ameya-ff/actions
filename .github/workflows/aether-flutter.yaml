@@ -104,6 +104,9 @@ jobs:
 
       - run: rsync -a --remove-source-files tmp/ .
 
+      - name: Strip ShareExtension for CI
+        run: python scripts/strip_share_extension.py
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -195,14 +198,14 @@ jobs:
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define-from-file=env/$ENV.json --no-pub
+          flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define-from-file=env/$ENV.json --no-pub --flavor $ENV
 
       - name: Build AAB (Android App Bundle)
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          flutter build appbundle --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define-from-file=env/$ENV.json --no-pub
+          flutter build appbundle --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define-from-file=env/$ENV.json --no-pub --flavor $ENV
 
       - name: Get signing report for release
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both') }}
@@ -235,7 +238,7 @@ jobs:
           r2-access-key-id: ${{ secrets.CF_R2_ACCESS_KEY }}
           r2-secret-access-key: ${{ secrets.CF_R2_SECRET_KEY }}
           r2-bucket: ${{ secrets.CF_R2_BUCKET }}
-          source-dir: build/app/outputs/bundle/release
+          source-dir: build/app/outputs/bundle/${{ github.event.client_payload.env || github.event.inputs.env }}Release
           destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
           output-file-url: false
           multipart-size: 100
@@ -249,7 +252,7 @@ jobs:
         with:
             serviceAccountJsonPlainText: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
             packageName: ${{ secrets.AETHER_PLAY_STORE_PACKAGE_NAME }}
-            releaseFiles: build/app/outputs/bundle/release/*.aab
+            releaseFiles: build/app/outputs/bundle/${{ github.event.client_payload.env || github.event.inputs.env }}Release/*.aab
             track: internal
             status: draft
 
@@ -314,6 +317,9 @@ jobs:
           echo "Generated version code: $VERSION_CODE"
 
       - run: rsync -a --remove-source-files tmp/ .
+
+      - name: Strip ShareExtension for CI
+        run: python scripts/strip_share_extension.py
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -496,7 +502,8 @@ jobs:
             --build-name ${{ steps.set_build_name.outputs.build_name }} \
             --build-number ${{ steps.set_version_code.outputs.version_code }} \
             --dart-define-from-file=env/$ENV.json \
-            --release
+            --release \
+            --flavor $ENV
 
       # ──────────────────────────────────────────────────────────────────────
       # Symbol audit — gates all downstream steps (caching, signing, notarization).
@@ -679,8 +686,38 @@ jobs:
             --apple-id "$APPLE_ID" \
             --team-id "JDXS7993X9" \
             --password "$NOTARYTOOL_APP_PASSWORD" \
-            --wait \
+            --output-format json > submit_result.json
+
+          cat submit_result.json
+          SUBMISSION_ID=$(jq -r '.id' submit_result.json)
+          echo "Submission ID: $SUBMISSION_ID"
+
+          echo "Waiting for notarization to complete..."
+          xcrun notarytool wait "$SUBMISSION_ID" \
+            --apple-id "$APPLE_ID" \
+            --team-id "JDXS7993X9" \
+            --password "$NOTARYTOOL_APP_PASSWORD" \
             --timeout 10m
+
+          STATUS=$(xcrun notarytool info "$SUBMISSION_ID" \
+            --apple-id "$APPLE_ID" \
+            --team-id "JDXS7993X9" \
+            --password "$NOTARYTOOL_APP_PASSWORD" \
+            --output-format json | jq -r '.status')
+
+          echo "Notarization status: $STATUS"
+
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "::error::Notarization failed with status $STATUS. Fetching log..."
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --team-id "JDXS7993X9" \
+              --password "$NOTARYTOOL_APP_PASSWORD" \
+              log.json
+            cat log.json
+            exit 1
+          fi
+
           # Staple the notarization ticket directly to the .app bundle.
           # The ticket is indexed by the app's content hash (not the zip's hash).
           xcrun stapler staple "$APP"
@@ -883,6 +920,8 @@ jobs:
 
       - run: rsync -a --remove-source-files tmp/ .
 
+      - name: Strip ShareExtension for CI
+        run: python scripts/strip_share_extension.py
 
       - name: Select latest Xcode (prefer Xcode 26+ for iOS 26 SDK)
         run: |
@@ -989,7 +1028,14 @@ jobs:
         env:
           IOS_EXPORT_METHOD: ${{ github.event.client_payload.ios-export-method || github.event.inputs.ios-export-method || 'app-store' }}
           IOS_PROVISION_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
+          if [[ "${ENV}" == "dev" ]]; then
+            BUNDLE_ID="ai.farflung.aether.dev"
+          else
+            BUNDLE_ID="ai.farflung.aether"
+          fi
+          
           cat > ios/ExportOptions.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1005,13 +1051,13 @@ jobs:
             <string>Apple Distribution</string>
             <key>provisioningProfiles</key>
             <dict>
-              <key>ai.farflung.aether</key>
+              <key>${BUNDLE_ID}</key>
               <string>${IOS_PROVISION_PROFILE_NAME}</string>
             </dict>
           </dict>
           </plist>
           EOF
-          echo "ExportOptions.plist written ✓"
+          echo "ExportOptions.plist written for ${BUNDLE_ID} ✓"
 
       - name: Build IPA
         env:
@@ -1055,7 +1101,8 @@ jobs:
             --export-options-plist=ios/ExportOptions.plist \
             --build-name="${{ steps.set_build_name.outputs.build_name }}" \
             --build-number="${{ steps.set_version_code.outputs.version_code }}" \
-            --dart-define-from-file="env/${ENV}.json"
+            --dart-define-from-file="env/${ENV}.json" \
+            --flavor "${ENV}"
 
           echo "IPA: done"
 
