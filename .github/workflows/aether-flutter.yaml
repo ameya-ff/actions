@@ -992,14 +992,26 @@ jobs:
           DEV_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_DEV_NAME }}
           PROD_PROFILE_BASE64: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_BASE64 }}
           PROD_PROFILE_NAME: ${{ secrets.AETHER_IOS_PROVISION_PROFILE_NAME }}
+          
+          SHARE_EXT_DEV_BASE64: ${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_DEV_BASE64 }}
+          SHARE_EXT_DEV_NAME: ${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_DEV_NAME }}
+          SHARE_EXT_PROD_BASE64: ${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_BASE64 }}
+          SHARE_EXT_PROD_NAME: ${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_NAME }}
+          
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           if [[ "$ENV" == "dev" ]]; then
             MAIN_PROFILE_BASE64="$DEV_PROFILE_BASE64"
             MAIN_PROFILE_NAME="$DEV_PROFILE_NAME"
+            SHARE_EXT_PROFILE_BASE64="$SHARE_EXT_DEV_BASE64"
+            SHARE_EXT_PROFILE_NAME="$SHARE_EXT_DEV_NAME"
+            SHARE_EXT_BUNDLE_ID="ai.farflung.aether.dev.ShareExtension"
           else
             MAIN_PROFILE_BASE64="$PROD_PROFILE_BASE64"
             MAIN_PROFILE_NAME="$PROD_PROFILE_NAME"
+            SHARE_EXT_PROFILE_BASE64="$SHARE_EXT_PROD_BASE64"
+            SHARE_EXT_PROFILE_NAME="$SHARE_EXT_PROD_NAME"
+            SHARE_EXT_BUNDLE_ID="ai.farflung.aether.ShareExtension"
           fi
 
           # Write main app profile
@@ -1012,12 +1024,14 @@ jobs:
           
           # Share Extension Profile
           PP_SHARE_EXT_PATH="$RUNNER_TEMP/aether_share_ext_ios.mobileprovision"
-          echo "${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_BASE64 }}" | base64 --decode > "$PP_SHARE_EXT_PATH"
+          echo "$SHARE_EXT_PROFILE_BASE64" | base64 --decode > "$PP_SHARE_EXT_PATH"
           cp "$PP_SHARE_EXT_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/"
           cp "$PP_SHARE_EXT_PATH" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"
           
-          # Export the name so it can be dynamically referenced downstream
+          # Export variables so they can be dynamically referenced downstream
           echo "IOS_PROVISION_PROFILE_NAME=$MAIN_PROFILE_NAME" >> $GITHUB_ENV
+          echo "SHARE_EXT_IOS_PROVISION_PROFILE_NAME=$SHARE_EXT_PROFILE_NAME" >> $GITHUB_ENV
+          echo "SHARE_EXT_BUNDLE_ID=$SHARE_EXT_BUNDLE_ID" >> $GITHUB_ENV
           echo "Provisioning profiles installed ✓ (both Xcode 15 + 16 locations)"
 
       - name: Patch Runner.entitlements — aps-environment to production
@@ -1064,8 +1078,8 @@ jobs:
             <dict>
               <key>${BUNDLE_ID}</key>
               <string>${IOS_PROVISION_PROFILE_NAME}</string>
-              <key>ai.farflung.aether.ShareExtension</key>
-              <string>${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_NAME }}</string>
+              <key>${SHARE_EXT_BUNDLE_ID}</key>
+              <string>${SHARE_EXT_IOS_PROVISION_PROFILE_NAME}</string>
             </dict>
           </dict>
           </plist>
@@ -1073,13 +1087,18 @@ jobs:
           echo "ExportOptions.plist written for ${BUNDLE_ID} ✓"
 
       - name: Configure Xcode signing for iOS CI
-        env:
-          SHARE_EXT_PROFILE_NAME: ${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_NAME }}
         run: |
           PBX=ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBX"
           sed -i '' 's/iPhone Developer/Apple Distribution/g' "$PBX"
-          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether.ShareExtension;/PRODUCT_BUNDLE_IDENTIFIER = ai.farflung.aether.ShareExtension;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${SHARE_EXT_PROFILE_NAME}\";/g" "$PBX"
+          
+          # Replace bundle ID dynamically if env is dev
+          if [[ "$SHARE_EXT_BUNDLE_ID" != "ai.farflung.aether.ShareExtension" ]]; then
+            sed -i '' "s/ai.farflung.aether.ShareExtension/$SHARE_EXT_BUNDLE_ID/g" "$PBX"
+          fi
+          
+          # Inject provisioning profile specifier
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = $SHARE_EXT_BUNDLE_ID;/PRODUCT_BUNDLE_IDENTIFIER = $SHARE_EXT_BUNDLE_ID;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$SHARE_EXT_IOS_PROVISION_PROFILE_NAME\";/g" "$PBX"
           echo "Xcode signing configured for iOS targets on CI ✓"
 
       - name: Build IPA
