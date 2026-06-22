@@ -58,27 +58,26 @@ jobs:
           TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/$REPO.git" tmp
-          mv tmp/* .
+          cp -a tmp/. .
 
       - name: Determine build metadata
         shell: bash
         env:
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
         run: |
-          cd tmp
-          COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
+          COMMIT_MESSAGE=$(git -C tmp log --pretty=format:"%s" -n 1)
           BUILD_NAME="v$(date +'%Y-%m-%d::%H:%M:%S')"
           if [[ -n "$COMMIT_MESSAGE" ]]; then
             echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
             echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
           fi
           if [[ "$BRANCH_OR_TAG" == "main" ]]; then
-            GIT_SHA=$(git rev-parse --short HEAD)
+            GIT_SHA=$(git -C tmp rev-parse --short HEAD)
           else
             GIT_SHA=$BRANCH_OR_TAG
           fi
           echo "GIT_SHA=$GIT_SHA" >> $GITHUB_ENV
-          cd ..
+          rm -rf tmp
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

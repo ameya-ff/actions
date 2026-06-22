@@ -35,7 +35,7 @@ jobs:
           TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/$REPO.git" tmp
-      - run: mv tmp/* .
+      - run: cp -a tmp/. . && rm -rf tmp
       - run: ls -la
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
