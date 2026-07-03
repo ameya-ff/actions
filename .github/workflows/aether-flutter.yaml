@@ -1004,20 +1004,11 @@ jobs:
           
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          if [[ "$ENV" == "dev" ]]; then
-            MAIN_PROFILE_BASE64="$DEV_PROFILE_BASE64"
-            MAIN_PROFILE_NAME="$DEV_PROFILE_NAME"
-            SHARE_EXT_PROFILE_BASE64="$SHARE_EXT_DEV_BASE64"
-            SHARE_EXT_PROFILE_NAME="$SHARE_EXT_DEV_NAME"
-            SHARE_EXT_BUNDLE_ID="ai.farflung.aether.dev.ShareExtension"
-          else
-            MAIN_PROFILE_BASE64="$PROD_PROFILE_BASE64"
-            MAIN_PROFILE_NAME="$PROD_PROFILE_NAME"
-            SHARE_EXT_PROFILE_BASE64="$SHARE_EXT_PROD_BASE64"
-            SHARE_EXT_PROFILE_NAME="$SHARE_EXT_PROD_NAME"
-            SHARE_EXT_BUNDLE_ID="ai.farflung.aether.ShareExtension"
-          fi
-
+          MAIN_PROFILE_BASE64="$PROD_PROFILE_BASE64"
+          MAIN_PROFILE_NAME="$PROD_PROFILE_NAME"
+          SHARE_EXT_PROFILE_BASE64="$SHARE_EXT_PROD_BASE64"
+          SHARE_EXT_PROFILE_NAME="$SHARE_EXT_PROD_NAME"
+          SHARE_EXT_BUNDLE_ID="ai.farflung.aether.ShareExtension"
           # Write main app profile
           PP_PATH="$RUNNER_TEMP/aether_ios.mobileprovision"
           echo "$MAIN_PROFILE_BASE64" | base64 --decode > "$PP_PATH"
@@ -1059,12 +1050,7 @@ jobs:
           IOS_EXPORT_METHOD: ${{ github.event.client_payload.ios-export-method || github.event.inputs.ios-export-method || 'app-store' }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          if [[ "${ENV}" == "dev" ]]; then
-            BUNDLE_ID="ai.farflung.aether.dev"
-          else
-            BUNDLE_ID="ai.farflung.aether"
-          fi
-          
+          BUNDLE_ID="ai.farflung.aether"
           cat > ios/ExportOptions.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1095,11 +1081,6 @@ jobs:
           PBX=ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBX"
           sed -i '' 's/iPhone Developer/Apple Distribution/g' "$PBX"
-          
-          # Replace bundle ID dynamically if env is dev
-          if [[ "$SHARE_EXT_BUNDLE_ID" != "ai.farflung.aether.ShareExtension" ]]; then
-            sed -i '' "s/ai.farflung.aether.ShareExtension/$SHARE_EXT_BUNDLE_ID/g" "$PBX"
-          fi
           
           # Inject provisioning profile specifier
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = $SHARE_EXT_BUNDLE_ID;/PRODUCT_BUNDLE_IDENTIFIER = $SHARE_EXT_BUNDLE_ID;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$SHARE_EXT_IOS_PROVISION_PROFILE_NAME\";/g" "$PBX"
