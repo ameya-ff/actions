@@ -645,18 +645,18 @@ jobs:
 
           # ── Step 4: Sign dylibs ──────────────────────────────────────────
           find Aether.app -name "*.dylib" | while read lib; do
-            codesign --force --options runtime --sign "$CERT" "$lib"
+            codesign --force --options runtime --timestamp --sign "$CERT" "$lib"
           done
 
           # ── Step 5: Sign frameworks (innermost first, NOT --deep) ────────
           # --deep is deprecated and silently skips flat-format bundles,
           # leaving invalid signatures that Gatekeeper rejects.
           find Aether.app/Contents/Frameworks -maxdepth 1 -name "*.framework" | while read fw; do
-            codesign --force --options runtime --sign "$CERT" "$fw"
+            codesign --force --options runtime --timestamp --sign "$CERT" "$fw"
           done
 
           # ── Step 6: Sign the outer app bundle last ───────────────────────
-          codesign --force --options runtime \
+          codesign --force --options runtime --timestamp \
             --sign "$CERT" \
             --entitlements "$ENTITLEMENTS" \
             Aether.app
@@ -754,7 +754,6 @@ jobs:
       # Mac App Store / TestFlight Build
       # ──────────────────────────────────────────────────────────────────────
       - name: Import iOS/Mac App Distribution certificate
-        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         env:
           IOS_CERTIFICATE_BASE64: ${{ secrets.AETHER_IOS_CERTIFICATE_BASE64 }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.AETHER_IOS_CERTIFICATE_PASSWORD }}
@@ -773,7 +772,6 @@ jobs:
           rm -f "$RUNNER_TEMP/ios_cert.p12"
 
       - name: Import Mac Installer Distribution certificate
-        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         env:
           MACOS_INSTALLER_CERT_BASE64: ${{ secrets.MACOS_INSTALLER_CERT_BASE64 }}
           MACOS_INSTALLER_CERT_PASSWORD: ${{ secrets.MACOS_INSTALLER_CERT_PASSWORD }}
@@ -793,7 +791,6 @@ jobs:
           rm -f "$RUNNER_TEMP/installer_cert.p12"
 
       - name: Install Mac App Store provisioning profile
-        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         run: |
           PP_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PP_DIR"
@@ -802,7 +799,6 @@ jobs:
 
 
       - name: Build macOS PKG for TestFlight
-        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         env:
           MACOS_APP_STORE_SIGNING_IDENTITY: ${{ secrets.MACOS_APP_STORE_SIGNING_IDENTITY }}
         run: |
@@ -826,7 +822,7 @@ jobs:
 
           # Re-sign with App Store Distribution cert using the merged entitlements
           # (app was signed with Developer ID for R2/DMG; TestFlight needs App Store cert)
-          codesign --force --deep --options runtime \
+          codesign --force --deep --options runtime --timestamp \
             --sign "$MACOS_APP_STORE_SIGNING_IDENTITY" \
             --keychain "$KEYCHAIN_PATH" \
             --entitlements /tmp/merged.plist \
@@ -841,12 +837,12 @@ jobs:
           mkdir -p build/macos/pkg
           productbuild --component "$APP" /Applications \
             --sign "${{ secrets.MACOS_INSTALLER_SIGNING_IDENTITY }}" \
+            --timestamp \
             --keychain "$KEYCHAIN_PATH" \
             build/macos/pkg/Aether.pkg
           echo "✅ PKG created and signed with installer certificate"
 
       - name: Upload macOS PKG to TestFlight
-        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         run: |
           echo "Xcode version: $(xcodebuild -version | head -1)"
 
@@ -1147,7 +1143,6 @@ jobs:
           keep-file-fresh: true
 
       - name: Upload to TestFlight
-        if: ${{ github.event.client_payload.env == 'prod' || github.event.inputs.env == 'prod' }}
         run: |
           echo "Xcode version: $(xcodebuild -version | head -1)"
 
