@@ -57,20 +57,36 @@ jobs:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           flutter build web -t lib/main_dashboard.dart --dart-define-from-file=env/dev.json --dart-define=FLUTTER_TEST_AUTH=true --base-href "/dashboard/"
-          mv build/web build/web_dashboard
+          mkdir -p build/web_combined
+          mv build/web build/web_combined/dashboard
 
       - name: Build Widgetbook
         working-directory: ./flutter
         run: |
           flutter build web -t lib/widgetbook.dart --base-href "/widgetbook/"
-          mv build/web build/web_widgetbook
+          mv build/web build/web_combined/widgetbook
+          
+          # Create a simple root index.html to link to both
+          cat << 'EOF' > build/web_combined/index.html
+          <!DOCTYPE html>
+          <html>
+          <head><title>Aether Testing</title></head>
+          <body style="font-family: sans-serif; padding: 2rem;">
+            <h1>Aether Testing</h1>
+            <ul>
+              <li><a href="/dashboard/">Test Dashboard</a></li>
+              <li><a href="/widgetbook/">Widgetbook</a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
 
-      - name: Deploy Dashboard to Netlify
+      - name: Deploy to Netlify
         uses: ameya-ff/actions-netlify@ameya
         with:
-          publish-dir: './flutter/build/web_dashboard'
+          publish-dir: './flutter/build/web_combined'
           production-branch: main
-          deploy-message: "Deploy Dashboard from GitHub Actions"
+          deploy-message: "Deploy Testing Tools from GitHub Actions"
           enable-pull-request-comment: false
           enable-commit-comment: false
           enable-commit-status: false
@@ -79,22 +95,5 @@ jobs:
           sha: ${{ github.event.client_payload.sha || github.sha }}
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_AETHER_DASHBOARD }}
-        timeout-minutes: 1
-
-      - name: Deploy Widgetbook to Netlify
-        uses: ameya-ff/actions-netlify@ameya
-        with:
-          publish-dir: './flutter/build/web_widgetbook'
-          production-branch: main
-          deploy-message: "Deploy Widgetbook from GitHub Actions"
-          enable-pull-request-comment: false
-          enable-commit-comment: false
-          enable-commit-status: false
-          owner: ${{ secrets.OWNER }}
-          repo: ${{ secrets.REPO_AF }}
-          sha: ${{ github.event.client_payload.sha || github.sha }}
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_AETHER_WIDGETBOOK }}
+          NETLIFY_SITE_ID: "629b6c23-1acb-4f59-9c40-2e2a28cda3bc"
         timeout-minutes: 1
