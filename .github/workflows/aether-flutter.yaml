@@ -476,17 +476,31 @@ jobs:
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBX"
           sed -i '' 's/ProvisioningStyle = Automatic/ProvisioningStyle = Manual/g' "$PBX"
           sed -i '' 's/Apple Development/-/g' "$PBX"
+          
+          # Configure main app profile
           sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = ""/PROVISIONING_PROFILE_SPECIFIER = "Aether macOS Developer ID"/g' "$PBX"
+          
+          # Explicitly configure Share Extension profile for macOS
+          SHARE_EXT_BUNDLE_ID="ai.farflung.aether.ShareExtension"
+          SHARE_EXT_PROVISION_PROFILE_NAME="Farflung macOS Developer ID"
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = $SHARE_EXT_BUNDLE_ID;/PRODUCT_BUNDLE_IDENTIFIER = $SHARE_EXT_BUNDLE_ID;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$SHARE_EXT_PROVISION_PROFILE_NAME\";/g" "$PBX"
+          
           echo "Xcode signing configured for CI ✓"
 
       - name: Install provisioning profile
         run: |
           PP_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PP_DIR"
+          
+          # Main App Developer ID Profile
           echo "${{ secrets.MAC_PROVISION_PROFILE }}" | base64 --decode > "$PP_DIR/aether_macos.provisionprofile"
+          
+          # Share Extension Developer ID Profile
+          echo "${{ secrets.MACOS_SHARE_EXT_DEVELOPER_ID_PROFILE_BASE64 }}" | base64 --decode > "$PP_DIR/aether_macos_share_ext.provisionprofile"
+          
           # Expand $(AppIdentifierPrefix) so the entitlement matches the Team ID prefix.
           sed -i '' 's/$(AppIdentifierPrefix)/JDXS7993X9./g' macos/Runner/Release.entitlements
-          echo "Provisioning profile installed ✓"
+          echo "Provisioning profiles installed ✓"
 
       - name: Build macOS
         env:
@@ -795,7 +809,8 @@ jobs:
           PP_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PP_DIR"
           echo "${{ secrets.AETHER_MACOS_APP_STORE_PROVISION_PROFILE_BASE64 }}" | base64 --decode > "$PP_DIR/aether_macos_appstore.provisionprofile"
-          echo "Mac App Store Provisioning profile installed ✓"
+          echo "${{ secrets.MACOS_SHARE_EXT_APP_STORE_PROFILE_BASE64 }}" | base64 --decode > "$PP_DIR/aether_macos_share_ext_appstore.provisionprofile"
+          echo "Mac App Store Provisioning profiles installed ✓"
 
 
       - name: Build macOS PKG for TestFlight
@@ -804,11 +819,16 @@ jobs:
         run: |
           APP=build/macos/Build/Products/Release/Aether.app
           PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos_appstore.provisionprofile"
+          EXT_PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos_share_ext_appstore.provisionprofile"
+          EXT_APP="$APP/Contents/PlugIns/Farflung.appex"
 
-          # Embed App Store provisioning profile (replaces Developer ID one)
+          # 1. Embed App Store provisioning profiles (replaces Developer ID ones)
           cp "$PP" "$APP/Contents/embedded.provisionprofile"
+          if [ -d "$EXT_APP" ]; then
+            cp "$EXT_PP" "$EXT_APP/Contents/embedded.provisionprofile"
+          fi
 
-          # Extract entitlements from the provisioning profile.
+          # 2. Extract entitlements from the provisioning profile.
           # The profile contains application-identifier and team-identifier which
           # MUST be present in the codesign signature for TestFlight (ITMS-90886).
           security cms -D -i "$PP" > /tmp/pp.plist
@@ -817,18 +837,44 @@ jobs:
           # Merge the App Store profile entitlements with our base app capabilities (App Sandbox, etc)
           cp macos/Runner/Release.entitlements /tmp/merged.plist
           /usr/libexec/PlistBuddy -c "Merge /tmp/mas_entitlements.plist" /tmp/merged.plist
-          echo "Merged entitlements for re-signing:"
+          echo "Merged entitlements for main app:"
           cat /tmp/merged.plist
+          
+          # 3. Inside-out signing (Frameworks -> Appex -> Main App)
+          # We cannot use --deep on the main app because it blindly applies the main app's
+          # entitlements to nested bundles, which breaks the Share Extension.
+          
+          # 3a. Re-sign all inner frameworks and dylibs (no entitlements needed)
+          echo "Signing frameworks..."
+          find "$APP/Contents/Frameworks" -type d -name "*.framework" -o -name "*.dylib" | while read -r framework; do
+            codesign --force --options runtime --timestamp --sign "$MACOS_APP_STORE_SIGNING_IDENTITY" --keychain "$KEYCHAIN_PATH" "$framework"
+          done
+          
+          # 3b. Re-sign the Share Extension with its specific profile & entitlements
+          if [ -d "$EXT_APP" ]; then
+            echo "Signing Share Extension..."
+            security cms -D -i "$EXT_PP" > /tmp/ext_pp.plist
+            /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' /tmp/ext_pp.plist > /tmp/ext_entitlements.plist
+            cp macos/ShareExtension/ShareExtension.entitlements /tmp/ext_merged.plist
+            /usr/libexec/PlistBuddy -c "Merge /tmp/ext_entitlements.plist" /tmp/ext_merged.plist
+            
+            codesign --force --options runtime --timestamp \
+              --sign "$MACOS_APP_STORE_SIGNING_IDENTITY" \
+              --keychain "$KEYCHAIN_PATH" \
+              --entitlements /tmp/ext_merged.plist \
+              "$EXT_APP"
+          fi
 
-          # Re-sign with App Store Distribution cert using the merged entitlements
-          # (app was signed with Developer ID for R2/DMG; TestFlight needs App Store cert)
-          codesign --force --deep --options runtime --timestamp \
+          # 3c. Re-sign the main app (without --deep)
+          echo "Signing Main App..."
+          codesign --force --options runtime --timestamp \
             --sign "$MACOS_APP_STORE_SIGNING_IDENTITY" \
             --keychain "$KEYCHAIN_PATH" \
             --entitlements /tmp/merged.plist \
             "$APP"
+            
           codesign --verify --verbose "$APP"
-          echo "✅ Re-signed with App Store Distribution cert + merged entitlements"
+          echo "✅ Re-signed all components from inside-out with App Store Distribution cert"
 
           # Create signed PKG — Apple requires the installer package to be
           # signed with a "3rd Party Mac Developer Installer" certificate.
