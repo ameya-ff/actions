@@ -502,6 +502,11 @@ jobs:
           sed -i '' 's/$(AppIdentifierPrefix)/JDXS7993X9./g' macos/Runner/Release.entitlements
           echo "Provisioning profiles installed ✓"
 
+      - name: Resolve SPM dependencies
+        run: |
+          cd macos
+          xcodebuild -resolvePackageDependencies -workspace Runner.xcworkspace -scheme Runner -scmProvider system
+
       - name: Build macOS
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
