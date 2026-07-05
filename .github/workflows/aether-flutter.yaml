@@ -272,6 +272,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Force Xcode SCM to system Git
+        run: defaults write com.apple.dt.Xcode IDEPackageSupportUseBuiltinSCM NO
+
       - shell: bash
         env:
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
@@ -922,6 +925,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Force Xcode SCM to system Git
+        run: defaults write com.apple.dt.Xcode IDEPackageSupportUseBuiltinSCM NO
 
       - shell: bash
         env:
