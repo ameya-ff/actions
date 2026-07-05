@@ -99,5 +99,5 @@ jobs:
           sha: ${{ github.event.client_payload.sha || github.sha }}
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: "629b6c23-1acb-4f59-9c40-2e2a28cda3bc"
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_AETHER_TESTING }}
         timeout-minutes: 1
