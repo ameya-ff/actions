@@ -57,17 +57,19 @@ jobs:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
           flutter build web -t lib/main_dashboard.dart --dart-define-from-file=env/dev.json --dart-define=FLUTTER_TEST_AUTH=true --base-href "/dashboard/"
-          mkdir -p build/web_combined
-          mv build/web build/web_combined/dashboard
+          mkdir -p ../web_combined
+          mv build/web ../web_combined/dashboard
+          flutter clean
 
       - name: Build Widgetbook
         working-directory: ./flutter
         run: |
+          flutter pub get
           flutter build web -t lib/widgetbook.dart --base-href "/widgetbook/"
-          mv build/web build/web_combined/widgetbook
+          mv build/web ../web_combined/widgetbook
           
           # Create a simple root index.html to link to both
-          cat << 'EOF' > build/web_combined/index.html
+          cat << 'EOF' > ../web_combined/index.html
           <!DOCTYPE html>
           <html>
           <head><title>Aether Testing</title></head>
@@ -84,7 +86,7 @@ jobs:
       - name: Deploy to Netlify
         uses: ameya-ff/actions-netlify@ameya
         with:
-          publish-dir: './flutter/build/web_combined'
+          publish-dir: './web_combined'
           production-branch: main
           deploy-message: "Deploy Testing Tools from GitHub Actions"
           enable-pull-request-comment: false
