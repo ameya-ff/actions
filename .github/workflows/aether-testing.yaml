@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ secrets.OWNER }}/${{ secrets.REPO_AF }}
-          token: ${{ secrets.GH_TOKEN_ACTIONS_AMEYA_FF }}
+          token: ${{ secrets.GH_TOKEN }}
           ref: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
           path: flutter
 
@@ -50,17 +50,6 @@ jobs:
       - name: Install dependencies
         working-directory: ./flutter
         run: flutter pub get
-
-      - name: Ensure env folder exists
-        working-directory: ./flutter
-        run: mkdir -p env
-
-      - name: Decode target environment config
-        working-directory: ./flutter
-        env:
-          ENV_JSON: ${{ secrets.AETHER_ENV_DEV_JSON }}
-        run: |
-          echo "$ENV_JSON" > env/dev.json
 
       - name: Build Test Dashboard
         working-directory: ./flutter
