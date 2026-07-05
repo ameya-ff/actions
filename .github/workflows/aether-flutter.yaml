@@ -1082,6 +1082,13 @@ jobs:
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = $SHARE_EXT_BUNDLE_ID;/PRODUCT_BUNDLE_IDENTIFIER = $SHARE_EXT_BUNDLE_ID;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$SHARE_EXT_IOS_PROVISION_PROFILE_NAME\";/g" "$PBX"
           echo "Xcode signing configured for iOS targets on CI ✓"
 
+      - name: Inject GoogleService-Info.plist from Secrets
+        env:
+          MACOS_GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.MACOS_GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          mkdir -p ios/Runner
+          echo "$MACOS_GOOGLE_SERVICE_INFO_PLIST" > ios/Runner/GoogleService-Info.plist
+
       - name: Build IPA
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
