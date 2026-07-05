@@ -40,7 +40,7 @@ jobs:
           TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$TOKEN@github.com/$OWNER/$REPO.git" tmp
-          mv tmp/* .
+          rsync -a tmp/ .
 
       - shell: bash
         run: |

@@ -64,7 +64,7 @@ jobs:
 
           # Execute patch script to place sync-rules inside the configmap
           python3 infra/gke/k8s/aether/$ENV/patch-sync-rules.py \
-            backend/powersync-config/sync-rules.yaml \
+            backend/powersync-config \
             infra/gke/k8s/aether/$ENV/configmap-powersync.yaml
 
           # Apply only updated PowerSync resources, rather than the entire kustomization directory
