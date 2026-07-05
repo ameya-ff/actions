@@ -55,6 +55,7 @@ concurrency:
 jobs:
   build:
     name: Build Aether Flutter App
+    if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' || github.event.client_payload.platform == 'web' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
