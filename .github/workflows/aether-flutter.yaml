@@ -1186,6 +1186,7 @@ jobs:
           # The Podfile post_install hook sets CODE_SIGNING_ALLOWED=NO for all
           # Pod targets, preventing profile inheritance errors.
           flutter build ipa \
+            -v \
             --release \
             --export-options-plist=ios/ExportOptions.plist \
             --build-name="${{ steps.set_build_name.outputs.build_name }}" \
