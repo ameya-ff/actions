@@ -378,7 +378,7 @@ jobs:
 
           # Allow codesign to access key without a UI prompt on the runner
           security set-key-partition-list \
-            -S apple-tool:,apple: \
+            -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           # Add to the runner's keychain search list ahead of login.keychain
@@ -505,6 +505,7 @@ jobs:
       - name: Build macOS
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          GIT_TERMINAL_PROMPT: 0
         run: |
           flutter build macos \
             --build-name ${{ steps.set_build_name.outputs.build_name }} \
@@ -781,7 +782,7 @@ jobs:
             -T /usr/bin/security \
             -T /usr/bin/productbuild
           security set-key-partition-list \
-            -S apple-tool:,apple: \
+            -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           rm -f "$RUNNER_TEMP/ios_cert.p12"
 
@@ -798,7 +799,7 @@ jobs:
             -T /usr/bin/security \
             -T /usr/bin/productbuild
           security set-key-partition-list \
-            -S apple-tool:,apple: \
+            -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           # Verify the installer identity is visible
           security find-identity -v "$KEYCHAIN_PATH" | grep -i "installer" || echo "⚠️  No installer identity found — pkg signing will fail"
@@ -1021,7 +1022,7 @@ jobs:
             -T /usr/bin/security
 
           security set-key-partition-list \
-            -S apple-tool:,apple: \
+            -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
@@ -1138,6 +1139,7 @@ jobs:
       - name: Build IPA
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          GIT_TERMINAL_PROMPT: 0
         run: |
           # Encode dart-defines from env JSON
           cat > /tmp/encode_defines.py << 'PYEOF'
