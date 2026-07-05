@@ -1,0 +1,111 @@
+name: Aether Testing (Dashboard & Widgetbook)
+
+on:
+  repository_dispatch:
+    types: [trigger-aether-testing-workflow]
+  workflow_dispatch:
+    inputs:
+      env:
+        description: target env
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - prod
+      git-ref:
+        description: git ref
+        required: true
+        default: main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_deploy:
+    runs-on: macos-14
+    steps:
+      - name: Checkout flutter repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.OWNER }}/${{ secrets.REPO_AF }}
+          token: ${{ secrets.GH_TOKEN_ACTIONS_AMEYA_FF }}
+          ref: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          path: flutter
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.29.0'
+          cache: true
+      
+      - name: Install dependencies
+        working-directory: ./flutter
+        run: flutter pub get
+
+      - name: Ensure env folder exists
+        working-directory: ./flutter
+        run: mkdir -p env
+
+      - name: Decode target environment config
+        working-directory: ./flutter
+        env:
+          ENV_JSON: ${{ secrets.AETHER_ENV_DEV_JSON }}
+        run: |
+          echo "$ENV_JSON" > env/dev.json
+
+      - name: Build Test Dashboard
+        working-directory: ./flutter
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+        run: |
+          flutter build web -t lib/main_dashboard.dart --dart-define-from-file=env/dev.json --dart-define=FLUTTER_TEST_AUTH=true --base-href "/dashboard/"
+          mv build/web build/web_dashboard
+
+      - name: Build Widgetbook
+        working-directory: ./flutter
+        run: |
+          flutter build web -t lib/widgetbook.dart --base-href "/widgetbook/"
+          mv build/web build/web_widgetbook
+
+      - name: Deploy Dashboard to Netlify
+        uses: ameya-ff/actions-netlify@ameya
+        with:
+          publish-dir: './flutter/build/web_dashboard'
+          production-branch: main
+          deploy-message: "Deploy Dashboard from GitHub Actions"
+          enable-pull-request-comment: false
+          enable-commit-comment: false
+          enable-commit-status: false
+          owner: ${{ secrets.OWNER }}
+          repo: ${{ secrets.REPO_AF }}
+          sha: ${{ github.event.client_payload.sha || github.sha }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_AETHER_DASHBOARD }}
+        timeout-minutes: 1
+
+      - name: Deploy Widgetbook to Netlify
+        uses: ameya-ff/actions-netlify@ameya
+        with:
+          publish-dir: './flutter/build/web_widgetbook'
+          production-branch: main
+          deploy-message: "Deploy Widgetbook from GitHub Actions"
+          enable-pull-request-comment: false
+          enable-commit-comment: false
+          enable-commit-status: false
+          owner: ${{ secrets.OWNER }}
+          repo: ${{ secrets.REPO_AF }}
+          sha: ${{ github.event.client_payload.sha || github.sha }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_AETHER_WIDGETBOOK }}
+        timeout-minutes: 1
