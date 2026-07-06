@@ -326,6 +326,11 @@ jobs:
           channel: stable
           flutter-version-file: pubspec.yaml
 
+      - name: Disable Swift Package Manager (SPM) in Flutter
+        run: |
+          flutter config --no-enable-swift-package-manager
+          echo "SPM disabled in Flutter config ✓"
+
       - name: Cache Flutter pub dependencies
         uses: actions/cache@v4
         with:
@@ -990,6 +995,11 @@ jobs:
           cache: true
           channel: stable
           flutter-version-file: pubspec.yaml
+
+      - name: Disable Swift Package Manager (SPM) in Flutter
+        run: |
+          flutter config --no-enable-swift-package-manager
+          echo "SPM disabled in Flutter config ✓"
 
       - name: Cache Flutter pub dependencies
         uses: actions/cache@v4
