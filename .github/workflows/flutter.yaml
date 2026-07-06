@@ -136,7 +136,7 @@ jobs:
             ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
             ${{ runner.os }}-dart-tool-
       
-      - run: mkdir -p build/ios/SourcePackages && flutter pub get
+      - run: mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
       - run: flutter --version
       
       - name: Setup assets env
