@@ -68,7 +68,7 @@ jobs:
             ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
             ${{ runner.os }}-dart-tool-
       
-      - run: mkdir -p build/ios/SourcePackages && flutter pub get
+      - run: mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
       # Web build steps
       - name: Build Web
         run: flutter build web --release
