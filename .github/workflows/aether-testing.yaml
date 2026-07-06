@@ -50,7 +50,7 @@ jobs:
       - name: Install dependencies
         working-directory: ./flutter
         run: |
-          flutter pub get
+          mkdir -p build/ios/SourcePackages && flutter pub get
           dart run build_runner build -d
 
       - name: Build Test Dashboard
@@ -66,7 +66,7 @@ jobs:
       - name: Build Widgetbook
         working-directory: ./flutter
         run: |
-          flutter pub get
+          mkdir -p build/ios/SourcePackages && flutter pub get
           flutter build web -t lib/widgetbook.dart --base-href "/widgetbook/" -v
           mv build/web ../web_combined/widgetbook
           
