@@ -671,6 +671,11 @@ jobs:
 
           # ── Step 3: Embed provisioning profile ───────────────────────────
           cp "$PP" Aether.app/Contents/embedded.provisionprofile
+          EXT_APP="Aether.app/Contents/PlugIns/Farflung.appex"
+          EXT_PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos_share_ext.provisionprofile"
+          if [ -d "$EXT_APP" ]; then
+            cp "$EXT_PP" "$EXT_APP/Contents/embedded.provisionprofile"
+          fi
 
           # ── Step 4: Sign dylibs ──────────────────────────────────────────
           find Aether.app -name "*.dylib" | while read lib; do
@@ -683,6 +688,20 @@ jobs:
           find Aether.app/Contents/Frameworks -maxdepth 1 -name "*.framework" | while read fw; do
             codesign --force --options runtime --timestamp --sign "$CERT" "$fw"
           done
+
+          # ── Step 5.5: Sign Share Extension ───────────────────────────────
+          if [ -d "$EXT_APP" ]; then
+            echo "Signing Share Extension..."
+            security cms -D -i "$EXT_PP" > /tmp/ext_pp.plist
+            /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' /tmp/ext_pp.plist > /tmp/ext_entitlements.plist
+            cp ../../../../../macos/ShareExtension/ShareExtension.entitlements /tmp/ext_merged.plist
+            /usr/libexec/PlistBuddy -c "Merge /tmp/ext_entitlements.plist" /tmp/ext_merged.plist
+            
+            codesign --force --options runtime --timestamp \
+              --sign "$CERT" \
+              --entitlements /tmp/ext_merged.plist \
+              "$EXT_APP"
+          fi
 
           # ── Step 6: Sign the outer app bundle last ───────────────────────
           codesign --force --options runtime --timestamp \
