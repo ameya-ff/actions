@@ -1,5 +1,11 @@
 ---
 description: check antigravity brain session sizes, extract skills from large sessions, then delete them
+# Claude Code only (ignored by Antigravity): this workflow deletes session data,
+# so never let the model start it on its own. The `du` audit steps are the
+# Claude Code equivalent of the `// turbo` markers below; the `rm -rf` steps are
+# deliberately left to prompt for approval.
+disable-model-invocation: true
+allowed-tools: Bash(du -sh *), Bash(ls ~/.gemini/antigravity/brain/*)
 ---
 
 # Antigravity Brain Cleanup
