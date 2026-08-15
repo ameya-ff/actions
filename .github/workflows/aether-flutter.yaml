@@ -1298,3 +1298,60 @@ jobs:
         run: |
           gh workflow run cleanup-runs.yaml --repo "${{ github.repository }}" -f run_id="${{ github.run_id }}" || true
           echo "✅ Cleanup triggered for run ${{ github.run_id }}"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Announce build failures.
+  #
+  # The triggering workflow in farflungai/aether_flutter only dispatches this
+  # one and reports success the moment curl returns, so a total build failure
+  # here shows up as a green check in the app repo. On 2026-08-13 the web,
+  # iOS and macOS builds all failed and aether.farflung.ai served a stale
+  # bundle for two days before anyone noticed.
+  #
+  # Note the run link dies quickly: cleanup-runs.yaml deletes runs from this
+  # repo daily after archiving them, so the archived logs are the durable
+  # copy and the message points at both.
+  # ──────────────────────────────────────────────────────────────────────────
+  notify-failure:
+    name: Notify Build Failure
+    needs: [build, build-macos, build-ios]
+    if: always() && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Google Chat failure notification
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_AETHER_FLUTTER_WEBHOOK }}
+          WEB_RESULT: ${{ needs.build.result }}
+          MACOS_RESULT: ${{ needs.build-macos.result }}
+          IOS_RESULT: ${{ needs.build-ios.result }}
+        run: |
+          if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
+            echo "⚠️ GOOGLE_CHAT_AETHER_FLUTTER_WEBHOOK secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          # Web failing is what takes aether.farflung.ai stale — call it out.
+          if [ "$WEB_RESULT" = "failure" ]; then
+            HEADLINE="❌ **Aether Flutter build failed — web deploy did NOT publish**"
+          else
+            HEADLINE="❌ **Aether Flutter build failed**"
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg headline "$HEADLINE" \
+            --arg env "$ENV" \
+            --arg branch "$BRANCH_OR_TAG" \
+            --arg web "$WEB_RESULT" \
+            --arg macos "$MACOS_RESULT" \
+            --arg ios "$IOS_RESULT" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg run_number "${{ github.run_number }}" \
+            --arg repo "${{ github.repository }}" \
+            '{text: "\($headline) (\($env)) | Branch/Tag: `\($branch)` | web: \($web) · macOS: \($macos) · iOS: \($ios) | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)> (deleted daily) | Archived logs: `farflungai/debug` → `ci-logs/aether-flutter/r\($run_number)_*`"}')
+
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$GOOGLE_CHAT_WEBHOOK"
