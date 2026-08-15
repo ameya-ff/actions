@@ -152,6 +152,11 @@ jobs:
       - name: Setup PowerSync Web assets (sqlite3.wasm + workers)
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
         run: dart run powersync:setup_web
+      - name: Generate code for aether_ui subpackage
+        run: |
+          cd packages/aether_ui
+          flutter pub get
+          dart run build_runner build -d
       - run: dart run build_runner build -d
       - run: flutter --version
 
@@ -351,6 +356,11 @@ jobs:
             ${{ runner.os }}-dart-tool-
 
       - run: mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
+      - name: Generate code for aether_ui subpackage
+        run: |
+          cd packages/aether_ui
+          flutter pub get
+          dart run build_runner build -d
       - run: dart run build_runner build -d
 
       # ──────────────────────────────────────────────────────────────────────
@@ -1038,6 +1048,11 @@ jobs:
             ${{ runner.os }}-dart-tool-
 
       - run: mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
+      - name: Generate code for aether_ui subpackage
+        run: |
+          cd packages/aether_ui
+          flutter pub get
+          dart run build_runner build -d
       - run: dart run build_runner build -d
 
       # ──────────────────────────────────────────────────────────────────────

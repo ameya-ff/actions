@@ -51,6 +51,8 @@ jobs:
         working-directory: ./flutter
         run: |
           mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
+          # Run build_runner on subpackages that require it
+          (cd packages/aether_ui && flutter pub get && dart run build_runner build -d)
           dart run build_runner build -d
 
       - name: Build Test Dashboard
