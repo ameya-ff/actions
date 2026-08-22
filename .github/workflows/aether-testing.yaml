@@ -50,7 +50,7 @@ jobs:
       - name: Install dependencies
         working-directory: ./flutter
         run: |
-          mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
+          mkdir -p build/ios/SourcePackages build/macos/SourcePackages packages/aether_ui/build/ios/SourcePackages packages/aether_ui/build/macos/SourcePackages && flutter pub get
           # Run build_runner on subpackages that require it
           (cd packages/aether_ui && flutter pub get && dart run build_runner build -d)
           dart run build_runner build -d
@@ -68,7 +68,7 @@ jobs:
       - name: Build Widgetbook
         working-directory: ./flutter
         run: |
-          mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
+          mkdir -p build/ios/SourcePackages build/macos/SourcePackages packages/aether_ui/build/ios/SourcePackages packages/aether_ui/build/macos/SourcePackages && flutter pub get
           flutter build web -t lib/widgetbook.dart --base-href "/widgetbook/" -v
           mv build/web ../web_combined/widgetbook
           
