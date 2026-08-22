@@ -1365,3 +1365,54 @@ jobs:
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
             "$GOOGLE_CHAT_WEBHOOK"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Announce build successes.
+  #
+  # Mirrors notify-failure: skipped platforms (filtered out by the `platform`
+  # input) show up as "skipped", not "success" — only an actual `failure` or
+  # `cancelled` result should suppress this.
+  # ──────────────────────────────────────────────────────────────────────────
+  notify-success:
+    name: Notify Build Success
+    needs: [build, build-macos, build-ios]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Google Chat success notification
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_AETHER_FLUTTER_WEBHOOK }}
+          WEB_RESULT: ${{ needs.build.result }}
+          MACOS_RESULT: ${{ needs.build-macos.result }}
+          IOS_RESULT: ${{ needs.build-ios.result }}
+        run: |
+          if [ -z "$GOOGLE_CHAT_WEBHOOK" ]; then
+            echo "⚠️ GOOGLE_CHAT_AETHER_FLUTTER_WEBHOOK secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          fmt() {
+            case "$1" in
+              success) echo "✅ success" ;;
+              skipped) echo "⏭️ skipped" ;;
+              *) echo "$1" ;;
+            esac
+          }
+
+          PAYLOAD=$(jq -n \
+            --arg headline "✅ *Aether Flutter build succeeded*" \
+            --arg env "$ENV" \
+            --arg branch "$BRANCH_OR_TAG" \
+            --arg web "$(fmt "$WEB_RESULT")" \
+            --arg macos "$(fmt "$MACOS_RESULT")" \
+            --arg ios "$(fmt "$IOS_RESULT")" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg repo "${{ github.repository }}" \
+            '{text: "\($headline)  ·  `\($env)` @ `\($branch)`\n web: \($web)   macOS: \($macos)   iOS: \($ios)\n<https://github.com/\($repo)/actions/runs/\($run_id)|View run #\($run_id)>"}')
+
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$GOOGLE_CHAT_WEBHOOK"
