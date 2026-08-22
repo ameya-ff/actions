@@ -268,8 +268,8 @@ jobs:
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git tag "${{ steps.set_build_name.outputs.build_name }}"
-          git push "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" "${{ steps.set_build_name.outputs.build_name }}"
+          git tag -f "${{ steps.set_build_name.outputs.build_name }}"
+          git push --force "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" "${{ steps.set_build_name.outputs.build_name }}"
 
   build-macos:
     name: Build Aether Flutter App (macOS)
@@ -814,8 +814,8 @@ jobs:
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git tag "${{ steps.set_build_name.outputs.build_name }}"
-          git push "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" "${{ steps.set_build_name.outputs.build_name }}"
+          git tag -f "${{ steps.set_build_name.outputs.build_name }}"
+          git push --force "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" "${{ steps.set_build_name.outputs.build_name }}"
 
 
       # ──────────────────────────────────────────────────────────────────────
