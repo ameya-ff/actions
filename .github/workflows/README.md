@@ -18,7 +18,7 @@ Handles cross-platform CI/CD for the `aether_flutter` repository.
 1.  **Web Build:** Compiles the app for Web (`--dart-define-from-file=env/{env}.json`) and uploads to Netlify. Conditionally uses `NETLIFY_SITE_ID_AETHER_DEV` or `NETLIFY_SITE_ID_AETHER_PROD` based on the payload environment.
 2.  **Android Build:** Sets up the keystore from `AETHER_ANDROID_KEYSTORE_BASE_64` and `AETHER_ANDROID_KEYPROPERTIES_BASE_64`. Builds `APK` and `AAB`.
 3.  **Storage:** Automatically uploads artifacts to Cloudflare R2 buckets for backup and sharing.
-4.  **Google Play Distribution:** When triggered with `env: prod`, it uploads the generated `AAB` to the Google Play Store internal track.
+4.  **Google Play Distribution:** Whenever an `AAB` is built (regardless of `env`), it's uploaded to the Google Play Store `internal` track with `status: completed`, so it publishes to internal testers automatically — no manual promotion needed in Play Console. Note: `flutter build appbundle`/`apk` must run *without* `--no-pub`, since `--no-pub` skips Flutter's release-mode regeneration of `GeneratedPluginRegistrant.java` and breaks the release compile (see [flutter/flutter#186800](https://github.com/flutter/flutter/issues/186800)).
 
 ### Legacy/Other Workflows
 *   `flutter.yaml` - The main CI/CD builder for the original `flutter` consumer app.
