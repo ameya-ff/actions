@@ -258,7 +258,6 @@ jobs:
             releaseFiles: build/app/outputs/bundle/release/*.aab
             track: internal
             status: completed
-            changesNotSentForReview: true
 
       - name: Tag commit
         if: ${{ github.event.client_payload.env == 'dev' || github.event.inputs.env == 'dev' }}
