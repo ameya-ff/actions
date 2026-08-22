@@ -257,7 +257,8 @@ jobs:
             packageName: ${{ secrets.AETHER_PLAY_STORE_PACKAGE_NAME }}
             releaseFiles: build/app/outputs/bundle/release/*.aab
             track: internal
-            status: draft
+            status: completed
+            changesNotSentForReview: true
 
       - name: Tag commit
         if: ${{ github.event.client_payload.env == 'dev' || github.event.inputs.env == 'dev' }}
