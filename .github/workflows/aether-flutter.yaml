@@ -363,6 +363,16 @@ jobs:
           dart run build_runner build -d
       - run: dart run build_runner build -d
 
+      # rive_native's macOS podspec runs `dart run rive_native:setup` from a
+      # CocoaPods script phase, whose working directory is the Pods project
+      # dir (macos/Pods), not the app root — `dart run` cannot find
+      # pubspec.yaml there and the build fails with "Could not find a file
+      # named pubspec.yaml". Running the setup here first (correct cwd)
+      # writes rive_native's own completion marker, so the podspec's script
+      # phase finds it already done and skips itself.
+      - name: Pre-create rive_native macOS setup marker
+        run: dart run rive_native:setup --verbose --platform macos
+
       # ──────────────────────────────────────────────────────────────────────
       # Developer ID Application signing
       # Uses a real Apple Developer ID Application certificate (JDXS7993X9)
