@@ -1,0 +1,121 @@
+name: Setup Aether Flutter
+description: >-
+  Clone the aether_flutter app repo, install Flutter, restore the pub and
+  build_runner caches, and run code generation. Shared by every platform job
+  so the three of them cannot drift apart.
+
+inputs:
+  branch-or-tag:
+    description: Git ref of aether_flutter to build.
+    required: true
+  owner:
+    description: GitHub owner of the app repo.
+    required: true
+  repo:
+    description: App repository name.
+    required: true
+  gh-token:
+    description: Token with read access to the app repo.
+    required: true
+  disable-spm:
+    description: >-
+      Run `flutter config --no-enable-swift-package-manager`. The Apple jobs
+      need this because Runner.xcodeproj defines several schemes and SPM then
+      demands a --flavor.
+    required: false
+    default: 'false'
+  rive-platform:
+    description: >-
+      Platform to pre-run `rive_native:setup` for ("macos", "ios"), or empty
+      to skip. rive_native's podspec runs that setup from a CocoaPods script
+      phase whose working directory is the Pods project dir, where there is
+      no pubspec.yaml for pub to resolve against, so it always fails there.
+      Running it here (correct cwd) writes rive_native's completion marker
+      and its script phase then skips itself. Must be `dart run`, not
+      `flutter pub run` — the latter refuses to run executables from
+      transitive dependencies, and rive_native is transitive via `rive`.
+    required: false
+    default: ''
+
+outputs:
+  commit-message:
+    description: Subject line of the app repo's HEAD commit.
+    value: ${{ steps.commit.outputs.commit_message }}
+
+runs:
+  using: composite
+  steps:
+    - name: Clone aether_flutter
+      shell: bash
+      env:
+        BRANCH_OR_TAG: ${{ inputs.branch-or-tag }}
+        OWNER: ${{ inputs.owner }}
+        REPO: ${{ inputs.repo }}
+        GH_TOKEN: ${{ inputs.gh-token }}
+      run: |
+        # --depth 1: nothing here reads history beyond HEAD.
+        git clone -b "$BRANCH_OR_TAG" --single-branch --depth 1 \
+          "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
+
+    - shell: bash
+      run: rsync -a --remove-source-files tmp/ .
+
+    - id: commit
+      shell: bash
+      run: |
+        COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
+        echo "commit_message=$COMMIT_MESSAGE" >> "$GITHUB_OUTPUT"
+        if [[ -n "$COMMIT_MESSAGE" ]]; then
+          echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> "$GITHUB_ENV"
+        fi
+
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        cache: true
+        channel: stable
+        flutter-version-file: pubspec.yaml
+
+    - name: Disable Swift Package Manager (SPM) in Flutter
+      if: inputs.disable-spm == 'true'
+      shell: bash
+      run: |
+        flutter config --no-enable-swift-package-manager
+        echo "SPM disabled in Flutter config ✓"
+
+    - name: Cache Flutter pub dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.pub-cache
+        key: ${{ runner.os }}-pub-cache-${{ hashFiles('**/pubspec.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-pub-cache-
+
+    - name: Cache Dart tool
+      uses: actions/cache@v4
+      with:
+        path: .dart_tool
+        # Include lib/** Dart source hashes so build_runner cache invalidates
+        # when source files change (not only when pubspec.lock changes).
+        key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock', 'lib/**/*.dart', 'packages/**/*.dart') }}
+        restore-keys: |
+          ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
+          ${{ runner.os }}-dart-tool-
+
+    - shell: bash
+      run: mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
+
+    - name: Generate code for aether_ui subpackage
+      shell: bash
+      run: |
+        cd packages/aether_ui
+        flutter pub get
+        dart run build_runner build -d
+
+    - shell: bash
+      run: dart run build_runner build -d
+
+    - name: Pre-create rive_native setup marker
+      if: inputs.rive-platform != ''
+      shell: bash
+      run: dart run rive_native:setup --verbose --platform ${{ inputs.rive-platform }}
