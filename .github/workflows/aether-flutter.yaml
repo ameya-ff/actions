@@ -53,64 +53,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # One timestamp for the whole release. Previously each platform job ran its
+  # own `date +%s`, so Android, macOS and iOS shipped different build numbers
+  # for the same commit. Needs no checkout — it is just a clock read.
+  prepare:
+    name: Prepare shared build metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version_code: ${{ steps.vc.outputs.version_code }}
+    steps:
+      - id: vc
+        shell: bash
+        run: |
+          VERSION_CODE=$(date +%s)
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "Shared version code for this run: $VERSION_CODE"
+
   build:
     name: Build Aether Flutter App
+    needs: prepare
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' || github.event.client_payload.platform == 'web' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - shell: bash
-        env:
-          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          OWNER: ${{ secrets.OWNER }}
-          REPO: ${{ secrets.REPO_AF }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
+      - name: Setup Aether Flutter
+        uses: ./.github/actions/setup-aether-flutter
+        with:
+          branch-or-tag: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          owner: ${{ secrets.OWNER }}
+          repo: ${{ secrets.REPO_AF }}
+          gh-token: ${{ secrets.GH_TOKEN }}
 
       - id: set_build_name
         shell: bash
         env:
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          cd tmp
           PUBSPEC_VERSION=$(grep '^version: ' pubspec.yaml | cut -d ' ' -f 2)
           BASE_VERSION=$(echo $PUBSPEC_VERSION | cut -d '+' -f 1)
-          
+
           if [[ "${ENV}" == "dev" ]]; then
             GIT_SHA=$(git rev-parse --short HEAD)
             BUILD_NAME="${BASE_VERSION}-dev.${GIT_SHA}"
           else
             BUILD_NAME="${BASE_VERSION}"
           fi
-          
+
           echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
           echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
-          
-          COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
-          if [[ -n "$COMMIT_MESSAGE" ]]; then
-            echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
-          fi
 
       - id: set_version_code
         shell: bash
+        env:
+          VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
         run: |
-          # Generate a unique version code based on timestamp
-          VERSION_CODE=$(date +%s)
+          # Computed once in `prepare` so every platform in a release carries
+          # the SAME build number. Each job used to run its own `date +%s`,
+          # minutes apart, so an iOS TestFlight build and its Play counterpart
+          # were unrelatable.
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "Generated version code: $VERSION_CODE"
-
-      - run: rsync -a --remove-source-files tmp/ .
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          cache: true
-          channel: stable
-          flutter-version-file: pubspec.yaml
+          echo "Using shared version code: $VERSION_CODE"
 
       - uses: actions/setup-java@v4
         with:
@@ -122,42 +126,9 @@ jobs:
             android/app/build.gradle.kts
             android/gradle/wrapper/gradle-wrapper.properties
 
-      - uses: actions/cache@v3
-        with:
-          path: |
-            **/flutter/.pub
-            **/flutter/bin
-            **/flutter/packages
-          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-flutter-
-
-      - name: Cache Flutter pub dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: ${{ runner.os }}-pub-cache-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-cache-
-
-      - name: Cache Dart tool
-        uses: actions/cache@v4
-        with:
-          path: .dart_tool
-          key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-dart-tool-
-
-      - run: mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
       - name: Setup PowerSync Web assets (sqlite3.wasm + workers)
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
         run: dart run powersync:setup_web
-      - name: Generate code for aether_ui subpackage
-        run: |
-          cd packages/aether_ui
-          flutter pub get
-          dart run build_runner build -d
-      - run: dart run build_runner build -d
       - run: flutter --version
 
 
@@ -273,6 +244,7 @@ jobs:
 
   build-macos:
     name: Build Aether Flutter App (macOS)
+    needs: prepare
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'macos' }}
     runs-on: macos-latest
     steps:
@@ -281,15 +253,15 @@ jobs:
       - name: Force Xcode SCM to system Git
         run: defaults write com.apple.dt.Xcode IDEPackageSupportUseBuiltinSCM NO
 
-      - shell: bash
-        env:
-          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          OWNER: ${{ secrets.OWNER }}
-          REPO: ${{ secrets.REPO_AF }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
+      - name: Setup Aether Flutter
+        uses: ./.github/actions/setup-aether-flutter
+        with:
+          branch-or-tag: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          owner: ${{ secrets.OWNER }}
+          repo: ${{ secrets.REPO_AF }}
+          gh-token: ${{ secrets.GH_TOKEN }}
+          disable-spm: 'true'
+          rive-platform: macos
 
       - id: set_build_name
         shell: bash
@@ -297,81 +269,30 @@ jobs:
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
+          # Deliberately unlike the Android/Web scheme: App Store Connect
+          # requires a monotonic numeric version, so a `1.5.1-dev.<sha>` style
+          # name is not usable here.
           if [[ "${ENV}" == "dev" ]]; then
             BUILD_NAME="$(date +'%Y%m%d%H%M').0.0"
-            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
-            echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
           else
             BUILD_NAME="$BRANCH_OR_TAG"
-            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
-            echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
           fi
-          cd tmp
-          COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
-          if [[ -z "$COMMIT_MESSAGE" ]]; then
-            echo "No commit message found"
-          else
-            echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
-          fi
+          echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+          echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
 
       - id: set_version_code
         shell: bash
+        env:
+          VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
         run: |
-          VERSION_CODE=$(date +%s)
+          # Computed once in `prepare` so every platform in a release carries
+          # the SAME build number. Each job used to run its own `date +%s`,
+          # minutes apart, so an iOS TestFlight build and its Play counterpart
+          # were unrelatable.
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "Generated version code: $VERSION_CODE"
+          echo "Using shared version code: $VERSION_CODE"
 
-      - run: rsync -a --remove-source-files tmp/ .
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          cache: true
-          channel: stable
-          flutter-version-file: pubspec.yaml
-
-      - name: Disable Swift Package Manager (SPM) in Flutter
-        run: |
-          flutter config --no-enable-swift-package-manager
-          echo "SPM disabled in Flutter config ✓"
-
-      - name: Cache Flutter pub dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: ${{ runner.os }}-pub-cache-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-cache-
-
-      - name: Cache Dart tool
-        uses: actions/cache@v4
-        with:
-          path: .dart_tool
-          # Include lib/** Dart source hashes so build_runner cache invalidates
-          # when source files change (not only when pubspec.lock changes).
-          key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock', 'lib/**/*.dart', 'packages/**/*.dart') }}
-          restore-keys: |
-            ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
-            ${{ runner.os }}-dart-tool-
-
-      - run: mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
-      - name: Generate code for aether_ui subpackage
-        run: |
-          cd packages/aether_ui
-          flutter pub get
-          dart run build_runner build -d
-      - run: dart run build_runner build -d
-
-      # rive_native's macOS podspec runs `dart run rive_native:setup` from a
-      # CocoaPods script phase, whose working directory is the Pods project
-      # dir (macos/Pods), not the app root — `dart run` cannot find
-      # pubspec.yaml there and the build fails with "Could not find a file
-      # named pubspec.yaml". Running the setup here first (correct cwd)
-      # writes rive_native's own completion marker, so the podspec's script
-      # phase finds it already done and skips itself.
-      - name: Pre-create rive_native macOS setup marker
-        run: dart run rive_native:setup --verbose --platform macos
 
       # ──────────────────────────────────────────────────────────────────────
       # Developer ID Application signing
@@ -966,6 +887,7 @@ jobs:
 
   build-ios:
     name: Build Aether Flutter App (iOS)
+    needs: prepare
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'ios' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'ios' }}
     runs-on: macos-latest
     steps:
@@ -973,49 +895,6 @@ jobs:
 
       - name: Force Xcode SCM to system Git
         run: defaults write com.apple.dt.Xcode IDEPackageSupportUseBuiltinSCM NO
-
-      - shell: bash
-        env:
-          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-          OWNER: ${{ secrets.OWNER }}
-          REPO: ${{ secrets.REPO_AF }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          git clone -b $BRANCH_OR_TAG --single-branch "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" tmp
-
-      - id: set_build_name
-        shell: bash
-        env:
-          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
-        run: |
-          if [[ "${ENV}" == "dev" ]]; then
-            BUILD_NAME="$(date +'%Y%m%d%H%M').0.0"
-            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
-            echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
-          else
-            BUILD_NAME="$BRANCH_OR_TAG"
-            echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
-            echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
-          fi
-          cd tmp
-          COMMIT_MESSAGE=$(git log --pretty=format:"%s" -n 1)
-          if [[ -z "$COMMIT_MESSAGE" ]]; then
-            echo "No commit message found"
-          else
-            echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
-          fi
-
-      - id: set_version_code
-        shell: bash
-        run: |
-          VERSION_CODE=$(date +%s)
-          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
-          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "Generated version code: $VERSION_CODE"
-
-      - run: rsync -a --remove-source-files tmp/ .
 
       - name: Select latest Xcode (prefer Xcode 26+ for iOS 26 SDK)
         run: |
@@ -1028,42 +907,45 @@ jobs:
           fi
           echo "Active Xcode: $(xcodebuild -version)"
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Setup Aether Flutter
+        uses: ./.github/actions/setup-aether-flutter
         with:
-          cache: true
-          channel: stable
-          flutter-version-file: pubspec.yaml
+          branch-or-tag: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          owner: ${{ secrets.OWNER }}
+          repo: ${{ secrets.REPO_AF }}
+          gh-token: ${{ secrets.GH_TOKEN }}
+          disable-spm: 'true'
+          rive-platform: ios
 
-      - name: Disable Swift Package Manager (SPM) in Flutter
+      - id: set_build_name
+        shell: bash
+        env:
+          BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          flutter config --no-enable-swift-package-manager
-          echo "SPM disabled in Flutter config ✓"
+          # Deliberately unlike the Android/Web scheme: App Store Connect
+          # requires a monotonic numeric version, so a `1.5.1-dev.<sha>` style
+          # name is not usable here.
+          if [[ "${ENV}" == "dev" ]]; then
+            BUILD_NAME="$(date +'%Y%m%d%H%M').0.0"
+          else
+            BUILD_NAME="$BRANCH_OR_TAG"
+          fi
+          echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
+          echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
 
-      - name: Cache Flutter pub dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: ${{ runner.os }}-pub-cache-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-cache-
-
-      - name: Cache Dart tool
-        uses: actions/cache@v4
-        with:
-          path: .dart_tool
-          key: ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock', 'lib/**/*.dart', 'packages/**/*.dart') }}
-          restore-keys: |
-            ${{ runner.os }}-dart-tool-${{ hashFiles('**/pubspec.lock') }}
-            ${{ runner.os }}-dart-tool-
-
-      - run: mkdir -p build/ios/SourcePackages build/macos/SourcePackages && flutter pub get
-      - name: Generate code for aether_ui subpackage
+      - id: set_version_code
+        shell: bash
+        env:
+          VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
         run: |
-          cd packages/aether_ui
-          flutter pub get
-          dart run build_runner build -d
-      - run: dart run build_runner build -d
+          # Computed once in `prepare` so every platform in a release carries
+          # the SAME build number. Each job used to run its own `date +%s`,
+          # minutes apart, so an iOS TestFlight build and its Play counterpart
+          # were unrelatable.
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Using shared version code: $VERSION_CODE"
 
       # ──────────────────────────────────────────────────────────────────────
       # iOS Distribution certificate + provisioning profile
@@ -1185,6 +1067,29 @@ jobs:
           EOF
           echo "ExportOptions.plist written for ${BUNDLE_ID} ✓"
 
+      # ──────────────────────────────────────────────────────────────────────
+      # Xcode build caches (CocoaPods + DerivedData)
+      # Mirrors what build-macos has done for a while; the iOS job never got
+      # it, so every run re-resolved ~80 pods (the whole Firebase iOS SDK
+      # among them) and recompiled them from scratch.
+      # Keys include Podfile.lock + pubspec.lock so caches bust on dep changes.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Restore CocoaPods cache
+        id: cache-pods
+        uses: actions/cache/restore@v4
+        with:
+          path: ios/Pods
+          key: ${{ runner.os }}-ios-pods-${{ hashFiles('ios/Podfile', 'ios/Podfile.lock') }}
+          restore-keys: ${{ runner.os }}-ios-pods-
+
+      - name: Restore Xcode DerivedData cache
+        id: cache-derived
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-ios-xcode-${{ hashFiles('ios/Podfile.lock', 'ios/Runner.xcodeproj/project.pbxproj', '**/pubspec.lock') }}
+          restore-keys: ${{ runner.os }}-ios-xcode-
+
       - name: Configure Xcode signing for iOS CI
         run: |
           PBX=ios/Runner.xcodeproj/project.pbxproj
@@ -1249,6 +1154,23 @@ jobs:
 
           echo "IPA: done"
 
+      - name: Save CocoaPods cache
+        # Only write cache from main branch — prevents untrusted fork workflows
+        # from poisoning the shared cache used by main branch builds.
+        if: steps.cache-pods.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ios/Pods
+          key: ${{ runner.os }}-ios-pods-${{ hashFiles('ios/Podfile', 'ios/Podfile.lock') }}
+
+      - name: Save Xcode DerivedData cache
+        # Only write cache from main branch — same poison-prevention rationale.
+        if: steps.cache-derived.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-ios-xcode-${{ hashFiles('ios/Podfile.lock', 'ios/Runner.xcodeproj/project.pbxproj', '**/pubspec.lock') }}
+
       - uses: ryand56/r2-upload-action@latest
         name: Upload IPA to R2
         with:
@@ -1293,12 +1215,13 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────────
   # Trigger cleanup after all builds complete.
-  # The cleanup workflow archives logs to farflungai/debug (private),
-  # then deletes runs from this public repo.
+  # The cleanup workflow archives logs to a private archive repo, then
+  # deletes runs from this public repo. The archive repo is named via
+  # secrets rather than inline so this public workflow does not carry it.
   # ──────────────────────────────────────────────────────────────────────────
   trigger-cleanup:
     name: Trigger Log Cleanup
-    needs: [build, build-macos, build-ios]
+    needs: [prepare, build, build-macos, build-ios]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1312,11 +1235,11 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   # Announce build failures.
   #
-  # The triggering workflow in farflungai/aether_flutter only dispatches this
+  # The triggering workflow in the app repo only dispatches this
   # one and reports success the moment curl returns, so a total build failure
   # here shows up as a green check in the app repo. On 2026-08-13 the web,
-  # iOS and macOS builds all failed and aether.farflung.ai served a stale
-  # bundle for two days before anyone noticed.
+  # iOS and macOS builds all failed and the deployed web app served a
+  # stale bundle for two days before anyone noticed.
   #
   # Note the run link dies quickly: cleanup-runs.yaml deletes runs from this
   # repo daily after archiving them, so the archived logs are the durable
@@ -1324,7 +1247,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   notify-failure:
     name: Notify Build Failure
-    needs: [build, build-macos, build-ios]
+    needs: [prepare, build, build-macos, build-ios]
     if: always() && contains(needs.*.result, 'failure')
     runs-on: ubuntu-latest
     steps:
@@ -1342,7 +1265,7 @@ jobs:
             exit 0
           fi
 
-          # Web failing is what takes aether.farflung.ai stale — call it out.
+          # Web failing is what takes the deployed web app stale — call it out.
           if [ "$WEB_RESULT" = "failure" ]; then
             HEADLINE="❌ **Aether Flutter build failed — web deploy did NOT publish**"
           else
@@ -1359,7 +1282,8 @@ jobs:
             --arg run_id "${{ github.run_id }}" \
             --arg run_number "${{ github.run_number }}" \
             --arg repo "${{ github.repository }}" \
-            '{text: "\($headline) (\($env)) | Branch/Tag: `\($branch)` | web: \($web) · macOS: \($macos) · iOS: \($ios) | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)> (deleted daily) | Archived logs: `farflungai/debug` → `ci-logs/aether-flutter/r\($run_number)_*`"}')
+            --arg archive "${{ secrets.OWNER }}/debug" \
+            '{text: "\($headline) (\($env)) | Branch/Tag: `\($branch)` | web: \($web) · macOS: \($macos) · iOS: \($ios) | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)> (deleted daily) | Archived logs: `\($archive)` → `ci-logs/aether-flutter/r\($run_number)_*`"}')
 
           curl -s -X POST \
             -H "Content-Type: application/json" \
@@ -1375,7 +1299,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   notify-success:
     name: Notify Build Success
-    needs: [build, build-macos, build-ios]
+    needs: [prepare, build, build-macos, build-ios]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     steps:
