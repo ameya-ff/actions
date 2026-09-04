@@ -1215,8 +1215,9 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────────
   # Trigger cleanup after all builds complete.
-  # The cleanup workflow archives logs to farflungai/debug (private),
-  # then deletes runs from this public repo.
+  # The cleanup workflow archives logs to a private archive repo, then
+  # deletes runs from this public repo. The archive repo is named via
+  # secrets rather than inline so this public workflow does not carry it.
   # ──────────────────────────────────────────────────────────────────────────
   trigger-cleanup:
     name: Trigger Log Cleanup
@@ -1234,7 +1235,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   # Announce build failures.
   #
-  # The triggering workflow in farflungai/aether_flutter only dispatches this
+  # The triggering workflow in the app repo only dispatches this
   # one and reports success the moment curl returns, so a total build failure
   # here shows up as a green check in the app repo. On 2026-08-13 the web,
   # iOS and macOS builds all failed and aether.farflung.ai served a stale
@@ -1281,7 +1282,8 @@ jobs:
             --arg run_id "${{ github.run_id }}" \
             --arg run_number "${{ github.run_number }}" \
             --arg repo "${{ github.repository }}" \
-            '{text: "\($headline) (\($env)) | Branch/Tag: `\($branch)` | web: \($web) · macOS: \($macos) · iOS: \($ios) | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)> (deleted daily) | Archived logs: `farflungai/debug` → `ci-logs/aether-flutter/r\($run_number)_*`"}')
+            --arg archive "${{ secrets.OWNER }}/debug" \
+            '{text: "\($headline) (\($env)) | Branch/Tag: `\($branch)` | web: \($web) · macOS: \($macos) · iOS: \($ios) | <https://github.com/\($repo)/actions/runs/\($run_id)|Run #\($run_id)> (deleted daily) | Archived logs: `\($archive)` → `ci-logs/aether-flutter/r\($run_number)_*`"}')
 
           curl -s -X POST \
             -H "Content-Type: application/json" \
