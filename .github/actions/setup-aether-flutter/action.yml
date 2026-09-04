@@ -1,12 +1,12 @@
 name: Setup Aether Flutter
 description: >-
-  Clone the aether_flutter app repo, install Flutter, restore the pub and
+  Clone the app repo, install Flutter, restore the pub and
   build_runner caches, and run code generation. Shared by every platform job
   so the three of them cannot drift apart.
 
 inputs:
   branch-or-tag:
-    description: Git ref of aether_flutter to build.
+    description: Git ref of the app repo to build.
     required: true
   owner:
     description: GitHub owner of the app repo.
@@ -45,7 +45,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Clone aether_flutter
+    - name: Clone app repo
       shell: bash
       env:
         BRANCH_OR_TAG: ${{ inputs.branch-or-tag }}
