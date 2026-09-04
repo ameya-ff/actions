@@ -1238,8 +1238,8 @@ jobs:
   # The triggering workflow in the app repo only dispatches this
   # one and reports success the moment curl returns, so a total build failure
   # here shows up as a green check in the app repo. On 2026-08-13 the web,
-  # iOS and macOS builds all failed and aether.farflung.ai served a stale
-  # bundle for two days before anyone noticed.
+  # iOS and macOS builds all failed and the deployed web app served a
+  # stale bundle for two days before anyone noticed.
   #
   # Note the run link dies quickly: cleanup-runs.yaml deletes runs from this
   # repo daily after archiving them, so the archived logs are the durable
@@ -1265,7 +1265,7 @@ jobs:
             exit 0
           fi
 
-          # Web failing is what takes aether.farflung.ai stale — call it out.
+          # Web failing is what takes the deployed web app stale — call it out.
           if [ "$WEB_RESULT" = "failure" ]; then
             HEADLINE="❌ **Aether Flutter build failed — web deploy did NOT publish**"
           else
