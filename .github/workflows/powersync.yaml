@@ -67,10 +67,13 @@ jobs:
             backend/powersync-config \
             infra/gke/k8s/aether/$ENV/configmap-powersync.yaml
 
-          # Apply only updated PowerSync resources, rather than the entire kustomization directory
+          # Apply only updated PowerSync resources, rather than the entire kustomization directory.
+          # No statefulset-powersync-mongo.yaml here: PowerSync's internal storage moved to
+          # Postgres (R2.6) and infra removed that manifest in farflungai/infra@c7dd65f — this
+          # apply kept referencing the deleted path, so every deploy since that commit failed
+          # before it ever reached the configmap/deployment apply below.
           kubectl apply -n $NAMESPACE --server-side --force-conflicts \
             -f infra/gke/k8s/aether/$ENV/configmap-powersync.yaml \
-            -f infra/gke/k8s/aether/$ENV/statefulset-powersync-mongo.yaml \
             -f infra/gke/k8s/aether/$ENV/deployment-powersync.yaml
 
           # Restart the powersync deployment to pick up updated configmap
