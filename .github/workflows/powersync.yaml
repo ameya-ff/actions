@@ -76,13 +76,24 @@ jobs:
             -f infra/gke/k8s/aether/$ENV/configmap-powersync.yaml \
             -f infra/gke/k8s/aether/$ENV/deployment-powersync.yaml
 
-          # Restart the powersync deployment to pick up updated configmap
-          if kubectl get deployment powersync -n $NAMESPACE &>/dev/null; then
-            kubectl patch deployment powersync -n $NAMESPACE \
-              -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\"}}}}}"
-            echo "✓ PowerSync restarted successfully."
-          else
-            echo "::error::PowerSync deployment not found in namespace $NAMESPACE"
+          # Restart both PowerSync deployments to pick up the updated configmap.
+          # "powersync" (the name this used to check/patch) is only the Service
+          # in front of the API pods now -- R2.2 (infra/gke/k8s/aether/dev/
+          # deployment-powersync.yaml) split the single powersync Deployment
+          # into powersync-api and powersync-replication, so that name has
+          # never matched a Deployment since the split landed.
+          MISSING=0
+          for DEPLOYMENT in powersync-api powersync-replication; do
+            if kubectl get deployment "$DEPLOYMENT" -n $NAMESPACE &>/dev/null; then
+              kubectl patch deployment "$DEPLOYMENT" -n $NAMESPACE \
+                -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\"}}}}}"
+              echo "✓ $DEPLOYMENT restarted successfully."
+            else
+              echo "::error::$DEPLOYMENT deployment not found in namespace $NAMESPACE"
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -eq 1 ]; then
             exit 1
           fi
 
