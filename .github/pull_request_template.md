@@ -4,6 +4,12 @@ required by hooks/guard-bash.py on `gh pr create` / `gh pr edit` — the
 heading has to exist even when there's nothing to list, so a reader can tell
 it was considered rather than forgotten. Delete this comment block before
 opening the PR.
+
+In repos that have .github/PULL_REQUEST_TEMPLATE/ui_change.md: changing what
+a user sees (a component, screen, Spark, or token)? Use the UI template
+instead: add `?template=ui_change.md` to the compare URL, or copy
+.github/PULL_REQUEST_TEMPLATE/ui_change.md. It carries the UI definition of
+done and the required proof links.
 -->
 
 ## Summary
