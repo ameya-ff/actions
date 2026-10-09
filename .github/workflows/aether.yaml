@@ -185,13 +185,37 @@ jobs:
 
           kubectl apply --server-side --force-conflicts -k infra/gke/k8s/aether/$ENV/
 
-          # Rolling restart all aether deployments to pick up new images
-          for DEPLOY in aether-core aether-worker aether-browser aether-audio aether-image; do
-            if kubectl get deployment $DEPLOY -n $NAMESPACE &>/dev/null; then
-              kubectl patch deployment $DEPLOY -n $NAMESPACE \
-                -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$(date +'%s')\"}}}}}"
-            fi
+          # Roll every deployment whose pods run an image this workflow just built, so a new
+          # deployment that uses one of them is picked up without being listed here.
+          # Keep BUILT_IMAGES in sync with the build matrix above.
+          BUILT_IMAGES="aether aether-browser aether-audio aether-image"
+          STAMP="$(date +'%s')"
+          ROLLED=()
+          while IFS=$'\t' read -r DEPLOY IMAGES; do
+            [ -n "$DEPLOY" ] || continue
+            for IMG in $IMAGES; do
+              REPO="${IMG##*/}"; REPO="${REPO%%[:@]*}"
+              if [[ " $BUILT_IMAGES " == *" $REPO "* ]]; then
+                kubectl patch deployment "$DEPLOY" -n "$NAMESPACE" \
+                  -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"date\":\"$STAMP\"}}}}}" >/dev/null
+                ROLLED+=("$DEPLOY")
+                break
+              fi
+            done
+          done < <(kubectl get deployments -n "$NAMESPACE" \
+            -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.template.spec.containers[*]}{.image}{" "}{end}{"\n"}{end}')
+          echo "Restarted ${#ROLLED[@]} deployment(s) running a freshly built image"
+          [ "${#ROLLED[@]}" -gt 0 ] || { echo "No deployment runs a built image"; exit 1; }
+
+          # Wait for the rollouts (one shared deadline), so a green run means the new image is serving.
+          DEADLINE=$((SECONDS + 900))
+          FAILED=0
+          for DEPLOY in "${ROLLED[@]}"; do
+            LEFT=$((DEADLINE - SECONDS)); [ "$LEFT" -gt 0 ] || LEFT=1
+            kubectl rollout status deployment/"$DEPLOY" -n "$NAMESPACE" --timeout="${LEFT}s" >/dev/null 2>&1 \
+              || FAILED=$((FAILED + 1))
           done
+          [ "$FAILED" -eq 0 ] || { echo "$FAILED rollout(s) did not finish within 15 minutes"; exit 1; }
 
       - name: Send Google Chat Success Notification
         if: success()
