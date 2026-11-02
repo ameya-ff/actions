@@ -77,6 +77,10 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
+          # Pinned: gcloud 573.0.0+ crashes in `config config-helper` with
+          # "'Credentials' object has no attribute 'private_key_id'"
+          # (https://issuetracker.google.com/issues/525047270). Unpin once fixed.
+          version: '572.0.0'
       - name: Configure gcloud
         shell: bash
         env:
