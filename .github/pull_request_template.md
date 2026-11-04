@@ -10,6 +10,12 @@ a user sees (a component, screen, Spark, or token)? Use the UI template
 instead: add `?template=ui_change.md` to the compare URL, or copy
 .github/PULL_REQUEST_TEMPLATE/ui_change.md. It carries the UI definition of
 done and the required proof links.
+
+Editing this template (agents, read this): the source of truth is
+claude/.github/pull_request_template.md. scripts/install.sh copies it over
+every subrepo's .github/pull_request_template.md, so an edit made in a subrepo
+is overwritten on the next run. Change it in the claude repo, then run
+scripts/install.sh to spread it.
 -->
 
 ## Summary
@@ -19,6 +25,19 @@ done and the required proof links.
 ## Test plan
 
 -
+
+## What this should move
+
+<!--
+B5-1: every change says, before it ships, what it should move and how that
+will be measured. Name the one (or more) of quality, speed, cost or trust it
+should move, and the check that will show whether it did: a test, an
+evaluation case, a number from the turn timings or the cost report. A change
+that should move none of them (docs, a rename) says so and why.
+-->
+
+- Moves (quality, speed, cost or trust):
+- Measured by:
 
 ## Prevention
 
