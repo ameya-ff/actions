@@ -39,6 +39,10 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
+          # Pinned: with `latest` (591.0.0) kubectl's gke-gcloud-auth-plugin crashes in
+          # `gcloud config config-helper` ('Credentials' has no attribute 'private_key_id').
+          # 568.0.0 was the last version with a passing deploy.
+          version: '568.0.0'
 
       - name: Configure gcloud
         shell: bash
