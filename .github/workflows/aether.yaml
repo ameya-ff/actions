@@ -155,6 +155,9 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
+          # Pinned: gcloud 591.0.0 (`latest`) crashes in `config config-helper` when kubectl's
+          # gke-gcloud-auth-plugin asks for a token, so deploys fail. 568.0.0 deploys cleanly.
+          version: '568.0.0'
 
       - name: Configure gcloud
         shell: bash
