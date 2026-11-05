@@ -46,6 +46,13 @@ on:
         - app-store
         - ad-hoc
 
+env:
+  # App identifiers live in repository variables, not in this public file.
+  AETHER_BUNDLE_ID: ${{ vars.AETHER_BUNDLE_ID }}
+  AETHER_MACOS_APP_NAME: ${{ vars.AETHER_MACOS_APP_NAME }}
+  AETHER_MACOS_SHARE_EXT_NAME: ${{ vars.AETHER_MACOS_SHARE_EXT_NAME }}
+  AETHER_MACOS_SHARE_EXT_PROFILE_NAME: ${{ vars.AETHER_MACOS_SHARE_EXT_PROFILE_NAME }}
+
 jobs:
   # One timestamp for the whole release. Previously each platform job ran its
   # own `date +%s`, so Android, macOS and iOS shipped different build numbers
@@ -470,8 +477,8 @@ jobs:
           sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = ""/PROVISIONING_PROFILE_SPECIFIER = "Aether macOS Developer ID"/g' "$PBX"
           
           # Explicitly configure Share Extension profile for macOS
-          SHARE_EXT_BUNDLE_ID="ai.farflung.aether.ShareExtension"
-          SHARE_EXT_PROVISION_PROFILE_NAME="Farflung macOS Developer ID"
+          SHARE_EXT_BUNDLE_ID="$AETHER_BUNDLE_ID.ShareExtension"
+          SHARE_EXT_PROVISION_PROFILE_NAME="$AETHER_MACOS_SHARE_EXT_PROFILE_NAME"
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = $SHARE_EXT_BUNDLE_ID;/PRODUCT_BUNDLE_IDENTIFIER = $SHARE_EXT_BUNDLE_ID;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$SHARE_EXT_PROVISION_PROFILE_NAME\";/g" "$PBX"
           
           echo "Xcode signing configured for CI ✓"
@@ -516,8 +523,8 @@ jobs:
       # ──────────────────────────────────────────────────────────────────────
       - name: Verify native symbols in macOS binary
         run: |
-          APP=build/macos/Build/Products/Release/Farflung.app
-          BINARY="$APP/Contents/MacOS/Farflung"
+          APP="build/macos/Build/Products/Release/$AETHER_MACOS_APP_NAME.app"
+          BINARY="$APP/Contents/MacOS/$AETHER_MACOS_APP_NAME"
 
           echo "=== Native symbol audit ==="
           echo "Binary: $BINARY"
@@ -573,7 +580,7 @@ jobs:
             echo "::error::This indicates DEAD_CODE_STRIPPING stripped FFI symbols."
             echo "::error::Fix: ensure DEAD_CODE_STRIPPING=NO in project.pbxproj and"
             echo "::error::     libllama.a is NOT in LlamaNative.podspec vendored_libraries."
-            echo "::error::Run locally: nm build/macos/Build/Products/Release/Farflung.app/Contents/MacOS/Farflung | grep llama_backend_init"
+            echo "::error::Run locally: nm build/macos/Build/Products/Release/$AETHER_MACOS_APP_NAME.app/Contents/MacOS/$AETHER_MACOS_APP_NAME | grep llama_backend_init"
             exit 1
           fi
 
@@ -602,7 +609,7 @@ jobs:
         run: |
           mkdir -p macos_artifact
           cd build/macos/Build/Products/Release
-          mv Farflung.app Aether.app
+          mv "$AETHER_MACOS_APP_NAME.app" Aether.app
 
           CERT="$MACOS_SIGNING_IDENTITY"
           ENTITLEMENTS="../../../../../macos/Runner/Release.entitlements"
@@ -652,7 +659,7 @@ jobs:
 
           # ── Step 3: Embed provisioning profile ───────────────────────────
           cp "$PP" Aether.app/Contents/embedded.provisionprofile
-          EXT_APP="Aether.app/Contents/PlugIns/Farflung.appex"
+          EXT_APP="Aether.app/Contents/PlugIns/$AETHER_MACOS_SHARE_EXT_NAME.appex"
           EXT_PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos_share_ext.provisionprofile"
           if [ -d "$EXT_APP" ]; then
             cp "$EXT_PP" "$EXT_APP/Contents/embedded.provisionprofile"
@@ -826,7 +833,7 @@ jobs:
           APP=build/macos/Build/Products/Release/Aether.app
           PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos_appstore.provisionprofile"
           EXT_PP="$HOME/Library/MobileDevice/Provisioning Profiles/aether_macos_share_ext_appstore.provisionprofile"
-          EXT_APP="$APP/Contents/PlugIns/Farflung.appex"
+          EXT_APP="$APP/Contents/PlugIns/$AETHER_MACOS_SHARE_EXT_NAME.appex"
 
           # 1. Embed App Store provisioning profiles (replaces Developer ID ones)
           cp "$PP" "$APP/Contents/embedded.provisionprofile"
@@ -1033,7 +1040,7 @@ jobs:
           MAIN_PROFILE_NAME="$PROD_PROFILE_NAME"
           SHARE_EXT_PROFILE_BASE64="$SHARE_EXT_PROD_BASE64"
           SHARE_EXT_PROFILE_NAME="$SHARE_EXT_PROD_NAME"
-          SHARE_EXT_BUNDLE_ID="ai.farflung.aether.ShareExtension"
+          SHARE_EXT_BUNDLE_ID="$AETHER_BUNDLE_ID.ShareExtension"
           # Write main app profile
           PP_PATH="$RUNNER_TEMP/aether_ios.mobileprovision"
           echo "$MAIN_PROFILE_BASE64" | base64 --decode > "$PP_PATH"
@@ -1075,7 +1082,7 @@ jobs:
           IOS_EXPORT_METHOD: ${{ github.event.client_payload.ios-export-method || github.event.inputs.ios-export-method || 'app-store' }}
           ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
         run: |
-          BUNDLE_ID="ai.farflung.aether"
+          BUNDLE_ID="$AETHER_BUNDLE_ID"
           cat > ios/ExportOptions.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

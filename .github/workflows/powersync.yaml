@@ -73,7 +73,7 @@ jobs:
 
           # Apply only updated PowerSync resources, rather than the entire kustomization directory.
           # No statefulset-powersync-mongo.yaml here: PowerSync's internal storage moved to
-          # Postgres (R2.6) and infra removed that manifest in farflungai/infra@c7dd65f — this
+          # Postgres (R2.6) and infra removed that manifest in the infra repo (c7dd65f) — this
           # apply kept referencing the deleted path, so every deploy since that commit failed
           # before it ever reached the configmap/deployment apply below.
           kubectl apply -n $NAMESPACE --server-side --force-conflicts \
