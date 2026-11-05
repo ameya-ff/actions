@@ -1,0 +1,3 @@
+#!/bin/sh
+# Leak guard: commit message.
+exec python3 "$(git rev-parse --show-toplevel)/scripts/leakguard.py" --message "$1"

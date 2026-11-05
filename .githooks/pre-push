@@ -1,0 +1,15 @@
+#!/bin/sh
+# Leak guard: every new commit (message, diff, identities) and the branch name.
+G="$(git rev-parse --show-toplevel)/scripts/leakguard.py"
+Z=0000000000000000000000000000000000000000
+rc=0
+while read -r lref lsha rref rsha; do
+  [ "$lsha" = "$Z" ] && continue
+  printf '%s\n' "${rref#refs/heads/}" | python3 "$G" --text "branch name" || rc=1
+  if [ "$rsha" = "$Z" ]; then
+    python3 "$G" --range "$lsha" --not --remotes || rc=1
+  else
+    python3 "$G" --range "$rsha..$lsha" || rc=1
+  fi
+done
+exit $rc
