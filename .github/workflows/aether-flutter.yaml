@@ -46,12 +46,6 @@ on:
         - app-store
         - ad-hoc
 
-# If another release happens while this workflow is still running,
-# cancel the earlier run in favor of the next run.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
-  cancel-in-progress: true
-
 jobs:
   # One timestamp for the whole release. Previously each platform job ran its
   # own `date +%s`, so Android, macOS and iOS shipped different build numbers
@@ -72,6 +66,9 @@ jobs:
   build:
     name: Build Aether Flutter App
     needs: prepare
+    concurrency:
+      group: ${{ github.workflow }}-android-${{ github.event.client_payload.env || github.event.inputs.env }}
+      cancel-in-progress: false
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' || github.event.client_payload.platform == 'web' }}
     runs-on: ubuntu-latest
     steps:
@@ -245,6 +242,9 @@ jobs:
   build-macos:
     name: Build Aether Flutter App (macOS)
     needs: prepare
+    concurrency:
+      group: ${{ github.workflow }}-macos-${{ github.event.client_payload.env || github.event.inputs.env }}
+      cancel-in-progress: false
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'macos' }}
     runs-on: macos-latest
     steps:
@@ -543,7 +543,7 @@ jobs:
       - name: Save CocoaPods cache
         # Only write cache from main branch — prevents untrusted fork workflows
         # from poisoning the shared cache used by main branch builds.
-        if: steps.cache-pods.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        if: ${{ !cancelled() && steps.cache-pods.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
         uses: actions/cache/save@v4
         with:
           path: macos/Pods
@@ -551,7 +551,7 @@ jobs:
 
       - name: Save Xcode DerivedData cache
         # Only write cache from main branch — same poison-prevention rationale.
-        if: steps.cache-derived.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        if: ${{ !cancelled() && steps.cache-derived.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
         uses: actions/cache/save@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData
@@ -889,6 +889,9 @@ jobs:
   build-ios:
     name: Build Aether Flutter App (iOS)
     needs: prepare
+    concurrency:
+      group: ${{ github.workflow }}-ios-${{ github.event.client_payload.env || github.event.inputs.env }}
+      cancel-in-progress: false
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'ios' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'ios' }}
     runs-on: macos-latest
     steps:
