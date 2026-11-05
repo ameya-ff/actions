@@ -551,7 +551,7 @@ jobs:
 
       - name: Save Xcode DerivedData cache
         # Only write cache from main branch — same poison-prevention rationale.
-        if: ${{ !cancelled() && steps.cache-derived.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        if: steps.cache-derived.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData
