@@ -100,6 +100,25 @@ jobs:
           echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_ENV
           echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
 
+      - name: Refuse a prod build that is not a semver tag
+        if: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' }}
+        shell: bash
+        env:
+          GIT_REF: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
+          BUILD_NAME: ${{ steps.set_build_name.outputs.build_name }}
+        run: |
+          # A prod build is exactly a v<semver> tag whose number equals the
+          # pubspec version (release-please keeps them in step): the Play
+          # version NAME people see is that semver, never a date or a branch.
+          if [[ ! "$GIT_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::prod builds come from a v<major>.<minor>.<patch> tag; got '$GIT_REF'"
+            exit 1
+          fi
+          if [[ "$GIT_REF" != "v$BUILD_NAME" ]]; then
+            echo "::error::tag $GIT_REF does not match pubspec version $BUILD_NAME"
+            exit 1
+          fi
+
       - id: set_version_code
         shell: bash
         env:
@@ -112,6 +131,11 @@ jobs:
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Using shared version code: $VERSION_CODE"
+
+      - name: Check env file (placeholders / required prod keys)
+        env:
+          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+        run: dart run tool/check_env.dart env/$ENV.json
 
       - uses: actions/setup-java@v4
         with:
@@ -217,15 +241,30 @@ jobs:
           multipart-concurrent: true
           keep-file-fresh: true
 
+      - name: Check the prod Play package secret is set
+        if: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' }}
+        shell: bash
+        env:
+          PLAY_PACKAGE: ${{ secrets.PLAY_STORE_PACKAGE_NAME }}
+        run: |
+          # Prod uploads go to the production app's package (PLAY_STORE_PACKAGE_NAME),
+          # dev uploads keep AETHER_PLAY_STORE_PACKAGE_NAME.
+          if [[ -z "$PLAY_PACKAGE" ]]; then
+            echo "::error::PLAY_STORE_PACKAGE_NAME secret is empty; needed for a prod build"
+            exit 1
+          fi
+
       - name: Upload to Google Play Store
         uses: r0adkll/upload-google-play@v1
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
         with:
             serviceAccountJsonPlainText: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
-            packageName: ${{ secrets.AETHER_PLAY_STORE_PACKAGE_NAME }}
+            packageName: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && secrets.PLAY_STORE_PACKAGE_NAME || secrets.AETHER_PLAY_STORE_PACKAGE_NAME }}
             releaseFiles: build/app/outputs/bundle/release/*.aab
+            # Every upload lands on the internal track only. Closed and
+            # production are separate, manual steps (aether-play-promote).
             track: internal
-            status: completed
+            status: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && 'completed' || 'draft' }}
 
       - name: Tag commit
         if: ${{ github.event.client_payload.env == 'dev' || github.event.inputs.env == 'dev' }}
@@ -727,17 +766,8 @@ jobs:
           multipart-concurrent: true
           keep-file-fresh: true
 
-      - name: Tag commit
-        if: ${{ github.event.client_payload.env == 'dev' || github.event.inputs.env == 'dev' }}
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          OWNER: ${{ secrets.OWNER }}
-          REPO: ${{ secrets.REPO_AF }}
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git tag -f "${{ steps.set_build_name.outputs.build_name }}"
-          git push --force "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" "${{ steps.set_build_name.outputs.build_name }}"
+      # No tag push here: the Android job's `<semver>-dev.<sha>` tag is the
+      # only dev tag.
 
 
       # ──────────────────────────────────────────────────────────────────────

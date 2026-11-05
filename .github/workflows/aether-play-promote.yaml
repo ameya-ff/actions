@@ -1,0 +1,83 @@
+# Copy to ameya-ff/actions/.github/workflows/aether-play-promote.yaml
+# (next to aether-flutter.yaml). Harness #639.
+#
+# Promotes a bundle that is already on Play's internal track to closed (alpha)
+# or production, as a staged rollout, with fastlane supply. Triggered by
+# aether_flutter's "Promote on Play" workflow (repository_dispatch) or by hand.
+# Needs the same secrets aether-flutter.yaml already uses:
+# GCP_GKE_GITHUB_ACTIONS_SA_KEY (Play service account JSON) and
+# PLAY_STORE_PACKAGE_NAME (the production app's package id, set already).
+name: Aether Play promote
+
+on:
+  repository_dispatch:
+    types: [trigger-aether-play-promote]
+  workflow_dispatch:
+    inputs:
+      track:
+        description: 'Track to promote to'
+        required: true
+        type: choice
+        options:
+          - alpha
+          - production
+      version-code:
+        description: 'versionCode on the internal track'
+        required: true
+        type: string
+      rollout:
+        description: 'Production only: 0.05 to 1.0'
+        required: false
+        default: '0.05'
+        type: string
+
+concurrency:
+  group: aether-play-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check inputs
+        shell: bash
+        env:
+          TRACK: ${{ github.event.client_payload.track || github.event.inputs.track }}
+          VERSION_CODE: ${{ github.event.client_payload.version-code || github.event.inputs.version-code }}
+          ROLLOUT: ${{ github.event.client_payload.rollout || github.event.inputs.rollout }}
+          PLAY_PACKAGE: ${{ secrets.PLAY_STORE_PACKAGE_NAME }}
+        run: |
+          [[ -n "$PLAY_PACKAGE" ]] || { echo "::error::PLAY_STORE_PACKAGE_NAME secret is empty"; exit 1; }
+          [[ "$TRACK" == "alpha" || "$TRACK" == "production" ]] || { echo "::error::track must be alpha or production"; exit 1; }
+          [[ "$VERSION_CODE" =~ ^[0-9]{9,10}$ ]] || { echo "::error::bad version-code '$VERSION_CODE'"; exit 1; }
+          if [[ "$TRACK" == "production" ]]; then
+            [[ "$ROLLOUT" =~ ^(0\.0[5-9]|0\.[1-9][0-9]*|1(\.0)?)$ ]] || { echo "::error::rollout must be 0.05 to 1.0, got '$ROLLOUT'"; exit 1; }
+          fi
+          {
+            echo "TRACK=$TRACK"
+            echo "VERSION_CODE=$VERSION_CODE"
+            echo "ROLLOUT=$ROLLOUT"
+          } >> "$GITHUB_ENV"
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Promote with fastlane supply
+        shell: bash
+        env:
+          SA_JSON: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
+          PLAY_PACKAGE: ${{ secrets.PLAY_STORE_PACKAGE_NAME }}
+        run: |
+          gem install fastlane --no-document
+          printf '%s' "$SA_JSON" > "$RUNNER_TEMP/play-sa.json"
+          trap 'rm -f "$RUNNER_TEMP/play-sa.json"' EXIT
+          args=(--package_name "$PLAY_PACKAGE" --json_key "$RUNNER_TEMP/play-sa.json"
+                --track internal --track_promote_to "$TRACK" --version_code "$VERSION_CODE"
+                --skip_upload_apk --skip_upload_aab --skip_upload_metadata
+                --skip_upload_changelogs --skip_upload_images --skip_upload_screenshots)
+          if [[ "$TRACK" == "production" ]]; then
+            args+=(--rollout "$ROLLOUT")
+          fi
+          fastlane supply "${args[@]}"
