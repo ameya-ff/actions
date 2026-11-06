@@ -62,7 +62,26 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version_code: ${{ steps.vc.outputs.version_code }}
+      env: ${{ steps.envnorm.outputs.env }}
     steps:
+      # The one place the target env is read. Lower-cased and trimmed, then it
+      # must be a known value; every job below uses this output.
+      - id: envnorm
+        shell: bash
+        env:
+          RAW_ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+        run: |
+          ENV="$(printf '%s' "$RAW_ENV" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          case "$ENV" in
+            dev|prod) ;;
+            *)
+              echo "::error::env must be 'dev' or 'prod'; got '$RAW_ENV'"
+              exit 1
+              ;;
+          esac
+          echo "env=$ENV" >> "$GITHUB_OUTPUT"
+          echo "Target env: $ENV"
+
       - id: vc
         shell: bash
         run: |
@@ -74,7 +93,7 @@ jobs:
     name: Build Aether Flutter App
     needs: prepare
     concurrency:
-      group: ${{ github.workflow }}-android-${{ github.event.client_payload.env || github.event.inputs.env }}
+      group: ${{ github.workflow }}-android-${{ needs.prepare.outputs.env }}
       cancel-in-progress: false
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' || github.event.client_payload.platform == 'web' }}
     runs-on: ubuntu-latest
@@ -92,7 +111,7 @@ jobs:
       - id: set_build_name
         shell: bash
         env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
         run: |
           PUBSPEC_VERSION=$(grep '^version: ' pubspec.yaml | cut -d ' ' -f 2)
           BASE_VERSION=$(echo $PUBSPEC_VERSION | cut -d '+' -f 1)
@@ -108,7 +127,7 @@ jobs:
           echo "build_name=$BUILD_NAME" >> $GITHUB_OUTPUT
 
       - name: Refuse a prod build that is not a semver tag
-        if: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' }}
+        if: ${{ needs.prepare.outputs.env == 'prod' }}
         shell: bash
         env:
           GIT_REF: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
@@ -141,7 +160,7 @@ jobs:
 
       - name: Check env file (placeholders / required prod keys)
         env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
         run: dart run tool/check_env.dart env/$ENV.json
 
       - uses: actions/setup-java@v4
@@ -164,7 +183,7 @@ jobs:
       - name: Build Web
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'web' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'web' }}
         env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
         run: flutter build web --dart-define-from-file=env/$ENV.json --dart-define=BUILD_SOURCE=ci --release
       
       - name: Deploy to Netlify
@@ -183,7 +202,7 @@ jobs:
           sha: ${{ github.event.client_payload.sha || github.sha }}
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && secrets.NETLIFY_SITE_ID_AETHER_PROD || secrets.NETLIFY_SITE_ID_AETHER_DEV }}
+          NETLIFY_SITE_ID: ${{ needs.prepare.outputs.env == 'prod' && secrets.NETLIFY_SITE_ID_AETHER_PROD || secrets.NETLIFY_SITE_ID_AETHER_DEV }}
         timeout-minutes: 1
 
       # Android build steps
@@ -191,13 +210,14 @@ jobs:
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
         env:
           # Prod uploads are signed with the Play upload key; dev keeps its own.
-          ANDROID_KEYPROPERTIES_BASE_64: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && secrets.ANDROID_UPLOAD_KEYPROPERTIES_PROD_BASE_64 || secrets.AETHER_ANDROID_KEYPROPERTIES_BASE_64 }}
-          ANDROID_KEYSTORE_BASE_64: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && secrets.ANDROID_UPLOAD_KEYSTORE_PROD_BASE_64 || secrets.AETHER_ANDROID_KEYSTORE_BASE_64 }}
+          ANDROID_KEYPROPERTIES_BASE_64: ${{ needs.prepare.outputs.env == 'prod' && secrets.ANDROID_UPLOAD_KEYPROPERTIES_PROD_BASE_64 || secrets.AETHER_ANDROID_KEYPROPERTIES_BASE_64 }}
+          ANDROID_KEYSTORE_BASE_64: ${{ needs.prepare.outputs.env == 'prod' && secrets.ANDROID_UPLOAD_KEYSTORE_PROD_BASE_64 || secrets.AETHER_ANDROID_KEYSTORE_BASE_64 }}
         run: |
+          umask 077
           ./scripts/android_setup.sh
 
       - name: Check the prod upload key fingerprint
-        if: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') }}
+        if: ${{ needs.prepare.outputs.env == 'prod' && (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') }}
         env:
           EXPECTED_SHA256: ${{ vars.ANDROID_UPLOAD_SHA256_PROD }}
         run: |
@@ -207,7 +227,18 @@ jobs:
           fi
           prop() { grep "^$1=" android/app/key.properties | tail -1 | cut -d= -f2- | tr -d '\r'; }
           ALIAS="$(prop keyAlias)"
-          ACTUAL="$(keytool -list -v -keystore android/app/keystore.jks -storepass "$(prop storePassword)" -alias "$ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' | head -1)"
+          # The password goes in through the environment, not the command line.
+          STORE_PASS="$(prop storePassword)"
+          export STORE_PASS
+          if ! LISTING="$(keytool -list -v -keystore android/app/keystore.jks -storepass:env STORE_PASS -alias "$ALIAS" 2>&1)"; then
+            echo "::error::keytool could not read the prod keystore (wrong password, alias or file): $LISTING"
+            exit 1
+          fi
+          ACTUAL="$(printf '%s\n' "$LISTING" | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' | head -1)"
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::keytool printed no SHA-256 for alias '$ALIAS'"
+            exit 1
+          fi
           if [ "$ACTUAL" != "$EXPECTED_SHA256" ]; then
             echo "::error::prod keystore SHA-256 '$ACTUAL' is not the expected upload key '$EXPECTED_SHA256'"
             exit 1
@@ -217,14 +248,14 @@ jobs:
       - name: Build APK
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both') }}
         env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
         run: |
           flutter build apk --split-per-abi --target-platform android-arm64 --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define-from-file=env/$ENV.json --dart-define=BUILD_SOURCE=ci
 
       - name: Build AAB (Android App Bundle)
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
         env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
         run: |
           flutter build appbundle --build-name ${{ steps.set_build_name.outputs.build_name }} --build-number ${{ steps.set_version_code.outputs.version_code }} --dart-define-from-file=env/$ENV.json --dart-define=BUILD_SOURCE=ci
 
@@ -244,7 +275,7 @@ jobs:
           r2-secret-access-key: ${{ secrets.CF_R2_SECRET_KEY }}
           r2-bucket: ${{ secrets.CF_R2_BUCKET }}
           source-dir: build/app/outputs/flutter-apk
-          destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
+          destination-dir: ${{ github.workflow }}-${{ needs.prepare.outputs.env }}
           output-file-url: false
           multipart-size: 100
           max-retries: 5
@@ -260,7 +291,7 @@ jobs:
           r2-secret-access-key: ${{ secrets.CF_R2_SECRET_KEY }}
           r2-bucket: ${{ secrets.CF_R2_BUCKET }}
           source-dir: build/app/outputs/bundle/release
-          destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}
+          destination-dir: ${{ github.workflow }}-${{ needs.prepare.outputs.env }}
           output-file-url: false
           multipart-size: 100
           max-retries: 5
@@ -268,7 +299,7 @@ jobs:
           keep-file-fresh: true
 
       - name: Check the prod Play package secret is set
-        if: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' }}
+        if: ${{ needs.prepare.outputs.env == 'prod' }}
         shell: bash
         env:
           PLAY_PACKAGE: ${{ secrets.PLAY_STORE_PACKAGE_NAME }}
@@ -285,15 +316,15 @@ jobs:
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'aab' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'aab' || github.event.client_payload.android-build-type == 'both') }}
         with:
             serviceAccountJsonPlainText: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
-            packageName: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && secrets.PLAY_STORE_PACKAGE_NAME || secrets.AETHER_PLAY_STORE_PACKAGE_NAME }}
+            packageName: ${{ needs.prepare.outputs.env == 'prod' && secrets.PLAY_STORE_PACKAGE_NAME || secrets.AETHER_PLAY_STORE_PACKAGE_NAME }}
             releaseFiles: build/app/outputs/bundle/release/*.aab
             # Every upload lands on the internal track only. Closed and
             # production are separate, manual steps (aether-play-promote).
             track: internal
-            status: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && 'completed' || 'draft' }}
+            status: ${{ needs.prepare.outputs.env == 'prod' && 'completed' || 'draft' }}
 
       - name: Tag commit
-        if: ${{ github.event.client_payload.env == 'dev' || github.event.inputs.env == 'dev' }}
+        if: ${{ needs.prepare.outputs.env == 'dev' }}
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           OWNER: ${{ secrets.OWNER }}
@@ -304,11 +335,15 @@ jobs:
           git tag -f "${{ steps.set_build_name.outputs.build_name }}"
           git push --force "https://ameya-ff:$GH_TOKEN@github.com/$OWNER/$REPO.git" "${{ steps.set_build_name.outputs.build_name }}"
 
+      - name: Remove the signing files
+        if: ${{ always() }}
+        run: rm -f android/app/keystore.jks android/app/key.properties
+
   build-macos:
     name: Build Aether Flutter App (macOS)
     needs: prepare
     concurrency:
-      group: ${{ github.workflow }}-macos-${{ github.event.client_payload.env || github.event.inputs.env }}
+      group: ${{ github.workflow }}-macos-${{ needs.prepare.outputs.env }}
       cancel-in-progress: false
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'macos' }}
     runs-on: macos-latest
@@ -332,7 +367,7 @@ jobs:
         shell: bash
         env:
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
         run: |
           # Deliberately unlike the Android/Web scheme: App Store Connect
           # requires a monotonic numeric version, so a `1.5.1-dev.<sha>` style
@@ -524,7 +559,7 @@ jobs:
 
       - name: Build macOS
         env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
           GIT_TERMINAL_PROMPT: 0
         run: |
           flutter build macos \
@@ -785,7 +820,7 @@ jobs:
           r2-secret-access-key: ${{ secrets.CF_R2_SECRET_KEY }}
           r2-bucket: ${{ secrets.CF_R2_BUCKET }}
           source-dir: macos_artifact
-          destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}/macos
+          destination-dir: ${{ github.workflow }}-${{ needs.prepare.outputs.env }}/macos
           output-file-url: false
           multipart-size: 100
           max-retries: 5
@@ -946,7 +981,7 @@ jobs:
     name: Build Aether Flutter App (iOS)
     needs: prepare
     concurrency:
-      group: ${{ github.workflow }}-ios-${{ github.event.client_payload.env || github.event.inputs.env }}
+      group: ${{ github.workflow }}-ios-${{ needs.prepare.outputs.env }}
       cancel-in-progress: false
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'ios' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'ios' }}
     runs-on: macos-latest
@@ -981,7 +1016,7 @@ jobs:
         shell: bash
         env:
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
         run: |
           # Deliberately unlike the Android/Web scheme: App Store Connect
           # requires a monotonic numeric version, so a `1.5.1-dev.<sha>` style
@@ -1053,7 +1088,7 @@ jobs:
           SHARE_EXT_PROD_BASE64: ${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_BASE64 }}
           SHARE_EXT_PROD_NAME: ${{ secrets.AETHER_SHARE_EXT_IOS_PROVISION_PROFILE_NAME }}
           
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
         run: |
           MAIN_PROFILE_BASE64="$PROD_PROFILE_BASE64"
           MAIN_PROFILE_NAME="$PROD_PROFILE_NAME"
@@ -1099,7 +1134,7 @@ jobs:
       - name: Write ExportOptions.plist
         env:
           IOS_EXPORT_METHOD: ${{ github.event.client_payload.ios-export-method || github.event.inputs.ios-export-method || 'app-store' }}
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
         run: |
           BUNDLE_ID="$AETHER_BUNDLE_ID"
           cat > ios/ExportOptions.plist << EOF
@@ -1169,7 +1204,7 @@ jobs:
 
       - name: Build IPA
         env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
           GIT_TERMINAL_PROMPT: 0
         run: |
           # Encode dart-defines from env JSON
@@ -1240,7 +1275,7 @@ jobs:
           r2-secret-access-key: ${{ secrets.CF_R2_SECRET_KEY }}
           r2-bucket: ${{ secrets.CF_R2_BUCKET }}
           source-dir: build/ios/ipa
-          destination-dir: ${{ github.workflow }}-${{ github.event.client_payload.env || github.event.inputs.env }}/ios
+          destination-dir: ${{ github.workflow }}-${{ needs.prepare.outputs.env }}/ios
           output-file-url: false
           multipart-size: 100
           max-retries: 5
@@ -1314,7 +1349,7 @@ jobs:
     steps:
       - name: Send Google Chat failure notification
         env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
           GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_AETHER_FLUTTER_WEBHOOK }}
           WEB_RESULT: ${{ needs.build.result }}
@@ -1366,7 +1401,7 @@ jobs:
     steps:
       - name: Send Google Chat success notification
         env:
-          ENV: ${{ github.event.client_payload.env || github.event.inputs.env }}
+          ENV: ${{ needs.prepare.outputs.env }}
           BRANCH_OR_TAG: ${{ github.event.client_payload.git-ref || github.event.inputs.git-ref }}
           GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_AETHER_FLUTTER_WEBHOOK }}
           WEB_RESULT: ${{ needs.build.result }}
