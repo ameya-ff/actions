@@ -190,10 +190,29 @@ jobs:
       - name: Setup Android Keystore from Secrets
         if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android' }}
         env:
-          ANDROID_KEYPROPERTIES_BASE_64: ${{ secrets.AETHER_ANDROID_KEYPROPERTIES_BASE_64 }}
-          ANDROID_KEYSTORE_BASE_64: ${{ secrets.AETHER_ANDROID_KEYSTORE_BASE_64 }}
+          # Prod uploads are signed with the Play upload key; dev keeps its own.
+          ANDROID_KEYPROPERTIES_BASE_64: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && secrets.ANDROID_UPLOAD_KEYPROPERTIES_PROD_BASE_64 || secrets.AETHER_ANDROID_KEYPROPERTIES_BASE_64 }}
+          ANDROID_KEYSTORE_BASE_64: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && secrets.ANDROID_UPLOAD_KEYSTORE_PROD_BASE_64 || secrets.AETHER_ANDROID_KEYSTORE_BASE_64 }}
         run: |
           ./scripts/android_setup.sh
+
+      - name: Check the prod upload key fingerprint
+        if: ${{ (github.event.client_payload.env || github.event.inputs.env) == 'prod' && (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') }}
+        env:
+          EXPECTED_SHA256: ${{ vars.ANDROID_UPLOAD_SHA256_PROD }}
+        run: |
+          if [ -z "$EXPECTED_SHA256" ]; then
+            echo "::error::ANDROID_UPLOAD_SHA256_PROD variable is empty; needed for a prod build"
+            exit 1
+          fi
+          prop() { grep "^$1=" android/app/key.properties | tail -1 | cut -d= -f2- | tr -d '\r'; }
+          ALIAS="$(prop keyAlias)"
+          ACTUAL="$(keytool -list -v -keystore android/app/keystore.jks -storepass "$(prop storePassword)" -alias "$ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' | head -1)"
+          if [ "$ACTUAL" != "$EXPECTED_SHA256" ]; then
+            echo "::error::prod keystore SHA-256 '$ACTUAL' is not the expected upload key '$EXPECTED_SHA256'"
+            exit 1
+          fi
+          echo "Prod keystore matches the expected upload key ✓"
 
       - name: Build APK
         if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' || github.event.client_payload.platform == 'all' || github.event.client_payload.platform == 'android') && (github.event.inputs.android-build-type == 'apk' || github.event.inputs.android-build-type == 'both' || github.event.client_payload.android-build-type == 'apk' || github.event.client_payload.android-build-type == 'both') }}
