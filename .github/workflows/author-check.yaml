@@ -44,7 +44,7 @@ jobs:
           while IFS=$'\x1f' read -r sha ae ce; do
             [ -n "$sha" ] || continue
             # one email per line, whole-line exact match; empty or spaced emails fail
-            if printf '%s\n%s\n' "$ae" "$ce" | grep -qvxF "$ALLOWED"; then
+            if printf '%s\n%s\n' "$ae" "$ce" | grep -vxF "$ALLOWED" >/dev/null; then
               echo "::error::$sha author <$ae> committer <$ce>"
               bad=1
             fi
