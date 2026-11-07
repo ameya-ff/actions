@@ -1,0 +1,103 @@
+name: copy-release-images
+
+# One-off: copy three images by digest into the prod registry repo.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type COPY to run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copy-release-images
+  cancel-in-progress: false
+
+jobs:
+  copy:
+    if: ${{ inputs.confirm == 'COPY' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v1
+        with:
+          token_format: access_token
+          credentials_json: ${{ secrets.GCP_GKE_GITHUB_ACTIONS_SA_KEY }}
+
+      - name: Login to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.GCP_GAR_DOCKER_REGISTRY }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Copy images by digest
+        env:
+          SRC: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}
+          DST: ${{ secrets.GCP_GAR_DOCKER_BASE_URL_PROD }}
+          TAG: prod-v3.1.0
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$SRC"
+          echo "::add-mask::$DST"
+
+          digest_of() {
+            docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2>/dev/null
+          }
+
+          services=(
+            "aether sha256:b7ccd9b78494128841c4bf46618e270069b63d30078819df8e01b27555db84b3"
+            "aether-audio sha256:436815661589f0608b2e3385a371f7ab8b0699f3b9e76347b02c42d2d08e7a1a"
+            "aether-image sha256:074717c2934eb63ddd14d1b2cbde808701c8dd12858b3df918aa962d29fe6de9"
+          )
+
+          rows=()
+          failed=0
+          for entry in "${services[@]}"; do
+            svc="${entry%% *}"
+            want="${entry##* }"
+
+            src_digest="$(digest_of "$SRC/$svc@$want")" || {
+              echo "::error::$svc: source digest not found"; failed=1; rows+=("$svc|$want|NO-SOURCE"); continue; }
+            if [ "$src_digest" != "$want" ]; then
+              echo "::error::$svc: source digest mismatch"; failed=1; rows+=("$svc|$want|SOURCE-MISMATCH"); continue
+            fi
+
+            if existing="$(digest_of "$DST/$svc:$TAG")"; then
+              if [ "$existing" = "$want" ]; then
+                echo "$svc: already at destination, skipping"
+                rows+=("$svc|$want|yes (skipped)")
+                continue
+              fi
+              echo "::error::$svc: destination tag exists with a different digest"
+              failed=1; rows+=("$svc|$existing|CONFLICT"); continue
+            fi
+
+            docker buildx imagetools create --tag "$DST/$svc:$TAG" "$SRC/$svc@$want"
+
+            got="$(digest_of "$DST/$svc:$TAG")" || got="missing"
+            if [ "$got" = "$want" ]; then
+              rows+=("$svc|$got|yes")
+            else
+              echo "::error::$svc: destination digest differs from source after copy"
+              failed=1; rows+=("$svc|$got|NO")
+            fi
+          done
+
+          {
+            echo "| service | digest | match |"
+            echo "|---|---|---|"
+            for r in "${rows[@]}"; do IFS='|' read -r a b c <<<"$r"; echo "| $a | $b | $c |"; done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
