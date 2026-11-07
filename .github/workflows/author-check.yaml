@@ -1,0 +1,52 @@
+name: author-check
+on:
+  pull_request:
+  push:
+permissions:
+  contents: read
+env:
+  ALLOWED: 213752513+ameya-ff@users.noreply.github.com
+  ZERO: "0000000000000000000000000000000000000000"
+jobs:
+  author:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Every new commit has the allowed author and committer email
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ] && [ "$AFTER" = "$ZERO" ]; then
+            echo "ref deleted"
+            exit 0
+          fi
+          if [ "$EVENT" = "pull_request" ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [ "$BEFORE" = "$ZERO" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            # new branch: every commit not already on the default branch
+            range="origin/$DEFAULT..$AFTER"
+          else
+            range="$BEFORE..$AFTER"
+          fi
+          echo "Checking $range"
+          # a failing git log aborts the job here (set -e on the assignment)
+          commits=$(git log --format='%H%x1f%ae%x1f%ce' "$range")
+          bad=0
+          while IFS=$'\x1f' read -r sha ae ce; do
+            [ -n "$sha" ] || continue
+            # one email per line, whole-line exact match; empty or spaced emails fail
+            if printf '%s\n%s\n' "$ae" "$ce" | grep -qvxF "$ALLOWED"; then
+              echo "::error::$sha author <$ae> committer <$ce>"
+              bad=1
+            fi
+          done <<< "$commits"
+          exit "$bad"
