@@ -9,8 +9,7 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: copy-release-images
@@ -46,14 +45,41 @@ jobs:
         env:
           SRC: ${{ secrets.GCP_GAR_DOCKER_BASE_URL }}
           DST: ${{ secrets.GCP_GAR_DOCKER_BASE_URL_PROD }}
+          REG: ${{ secrets.GCP_GAR_DOCKER_REGISTRY }}
           TAG: prod-v3.1.0
         run: |
           set -euo pipefail
+
+          # Mask the whole paths and every piece after the host before any docker call.
           echo "::add-mask::$SRC"
           echo "::add-mask::$DST"
+          for base in "$SRC" "$DST"; do
+            rest="${base#*/}"
+            IFS='/' read -ra pieces <<<"$rest"
+            for piece in "${pieces[@]}"; do
+              [ -n "$piece" ] && echo "::add-mask::$piece"
+            done
+          done
 
+          # The prod base URL must live on the same registry host we logged in to.
+          reg_host="${REG%%/*}"
+          if [ "${SRC%%/*}" != "$reg_host" ] || [ "${DST%%/*}" != "$reg_host" ]; then
+            echo "::error::registry host of the source or destination path does not match the logged-in registry host"
+            exit 1
+          fi
+
+          # digest_of REF: sets D_OUT. rc 0 = found (D_OUT is the digest),
+          # 2 = not found, 1 = any other error (D_OUT is stderr).
           digest_of() {
-            docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2>/dev/null
+            local err
+            err="$(mktemp)"
+            if D_OUT="$(docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2>"$err")"; then
+              rm -f "$err"; return 0
+            fi
+            if grep -qiE 'not found|MANIFEST_UNKNOWN|NAME_UNKNOWN' "$err"; then
+              rm -f "$err"; D_OUT=""; return 2
+            fi
+            D_OUT="$(cat "$err")"; rm -f "$err"; return 1
           }
 
           services=(
@@ -68,25 +94,36 @@ jobs:
             svc="${entry%% *}"
             want="${entry##* }"
 
-            src_digest="$(digest_of "$SRC/$svc@$want")" || {
-              echo "::error::$svc: source digest not found"; failed=1; rows+=("$svc|$want|NO-SOURCE"); continue; }
-            if [ "$src_digest" != "$want" ]; then
+            rc=0; digest_of "$SRC/$svc@$want" || rc=$?
+            if [ "$rc" -eq 2 ]; then
+              echo "::error::$svc: source digest not found"; failed=1; rows+=("$svc|$want|NO-SOURCE"); continue
+            elif [ "$rc" -ne 0 ]; then
+              echo "::error::$svc: source check error: $D_OUT"; failed=1; rows+=("$svc|$want|SRC-CHECK-ERROR"); continue
+            fi
+            if [ "$D_OUT" != "$want" ]; then
               echo "::error::$svc: source digest mismatch"; failed=1; rows+=("$svc|$want|SOURCE-MISMATCH"); continue
             fi
 
-            if existing="$(digest_of "$DST/$svc:$TAG")"; then
-              if [ "$existing" = "$want" ]; then
+            rc=0; digest_of "$DST/$svc:$TAG" || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              if [ "$D_OUT" = "$want" ]; then
                 echo "$svc: already at destination, skipping"
                 rows+=("$svc|$want|yes (skipped)")
-                continue
+              else
+                echo "::error::$svc: destination tag exists with a different digest"
+                failed=1; rows+=("$svc|$D_OUT|CONFLICT")
               fi
-              echo "::error::$svc: destination tag exists with a different digest"
-              failed=1; rows+=("$svc|$existing|CONFLICT"); continue
+              continue
+            elif [ "$rc" -ne 2 ]; then
+              echo "::error::$svc: destination check error: $D_OUT"; failed=1; rows+=("$svc|$want|DST-CHECK-ERROR"); continue
             fi
 
-            docker buildx imagetools create --tag "$DST/$svc:$TAG" "$SRC/$svc@$want"
+            if ! docker buildx imagetools create --prefer-index=false --tag "$DST/$svc:$TAG" "$SRC/$svc@$want"; then
+              echo "::error::$svc: COPY-FAILED"; failed=1; rows+=("$svc|$want|COPY-FAILED"); continue
+            fi
 
-            got="$(digest_of "$DST/$svc:$TAG")" || got="missing"
+            rc=0; digest_of "$DST/$svc:$TAG" || rc=$?
+            got="$D_OUT"; [ "$rc" -eq 0 ] || got="unreadable"
             if [ "$got" = "$want" ]; then
               rows+=("$svc|$got|yes")
             else
