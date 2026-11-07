@@ -15,6 +15,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Every new commit has the allowed author and committer email
+        shell: bash
         env:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
@@ -23,6 +24,11 @@ jobs:
           AFTER: ${{ github.event.after }}
           DEFAULT: ${{ github.event.repository.default_branch }}
         run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ] && [ "$AFTER" = "$ZERO" ]; then
+            echo "ref deleted"
+            exit 0
+          fi
           if [ "$EVENT" = "pull_request" ]; then
             range="$PR_BASE..$PR_HEAD"
           elif [ "$BEFORE" = "$ZERO" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
@@ -32,12 +38,15 @@ jobs:
             range="$BEFORE..$AFTER"
           fi
           echo "Checking $range"
+          # a failing git log aborts the job here (set -e on the assignment)
+          commits=$(git log --format='%H%x1f%ae%x1f%ce' "$range")
           bad=0
-          while read -r sha ae ce; do
-            [ -z "$sha" ] && continue
-            if [ "$ae" != "$ALLOWED" ] || [ "$ce" != "$ALLOWED" ]; then
-              echo "::error::$sha author <$ae> committer <$ce>: both must be exactly <$ALLOWED>"
+          while IFS=$'\x1f' read -r sha ae ce; do
+            [ -n "$sha" ] || continue
+            # one email per line, whole-line exact match; empty or spaced emails fail
+            if printf '%s\n%s\n' "$ae" "$ce" | grep -qvxF "$ALLOWED"; then
+              echo "::error::$sha author <$ae> committer <$ce>"
               bad=1
             fi
-          done < <(git log --format='%H %ae %ce' "$range")
-          exit $bad
+          done <<< "$commits"
+          exit "$bad"
